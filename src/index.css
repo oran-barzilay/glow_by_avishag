@@ -1,0 +1,151 @@
+@import url('https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;600;700&family=Heebo:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+  Design System for Beauty Salon Booking App
+  ------------------------------------------
+  Palette: Warm creams, rose-gold accents, soft pinks
+  Typography: Frank Ruhl Libre (headings) + Heebo (body) — Hebrew RTL
+  All colors in HSL format
+*/
+
+@layer base {
+  :root {
+    /* Warm cream background */
+    --background: 30 33% 97%;
+    --foreground: 20 20% 15%;
+
+    /* Cards: slightly warmer white */
+    --card: 30 30% 99%;
+    --card-foreground: 20 20% 15%;
+
+    --popover: 30 30% 99%;
+    --popover-foreground: 20 20% 15%;
+
+    /* Primary: Rose gold */
+    --primary: 350 45% 55%;
+    --primary-foreground: 30 30% 98%;
+
+    /* Secondary: Soft blush */
+    --secondary: 20 30% 93%;
+    --secondary-foreground: 20 20% 25%;
+
+    /* Muted: Light warm grey */
+    --muted: 25 20% 93%;
+    --muted-foreground: 20 10% 50%;
+
+    /* Accent: Gold tone */
+    --accent: 35 60% 88%;
+    --accent-foreground: 20 30% 20%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 25 25% 88%;
+    --input: 25 25% 88%;
+    --ring: 350 45% 55%;
+
+    --radius: 0.75rem;
+
+    /* Custom tokens */
+    --gradient-hero: linear-gradient(135deg, hsl(350 45% 55%), hsl(20 60% 65%));
+    --gradient-gold: linear-gradient(135deg, hsl(35 60% 70%), hsl(25 50% 60%));
+    --shadow-soft: 0 4px 24px -4px hsl(350 45% 55% / 0.12);
+    --shadow-card: 0 2px 16px -2px hsl(20 20% 15% / 0.06);
+    --shadow-elevated: 0 8px 32px -8px hsl(20 20% 15% / 0.12);
+
+    /* Sidebar */
+    --sidebar-background: 20 25% 96%;
+    --sidebar-foreground: 20 20% 25%;
+    --sidebar-primary: 350 45% 55%;
+    --sidebar-primary-foreground: 30 30% 98%;
+    --sidebar-accent: 25 30% 92%;
+    --sidebar-accent-foreground: 20 20% 25%;
+    --sidebar-border: 25 25% 88%;
+    --sidebar-ring: 350 45% 55%;
+
+    /* Service-specific colors */
+    --service-nails: 340 50% 60%;
+    --service-brows: 25 55% 55%;
+    --service-tan: 35 65% 60%;
+  }
+
+  .dark {
+    --background: 20 15% 8%;
+    --foreground: 30 20% 92%;
+    --card: 20 15% 12%;
+    --card-foreground: 30 20% 92%;
+    --popover: 20 15% 12%;
+    --popover-foreground: 30 20% 92%;
+    --primary: 350 45% 60%;
+    --primary-foreground: 20 15% 8%;
+    --secondary: 20 15% 18%;
+    --secondary-foreground: 30 20% 92%;
+    --muted: 20 10% 20%;
+    --muted-foreground: 25 15% 60%;
+    --accent: 35 40% 25%;
+    --accent-foreground: 30 20% 92%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 20 10% 20%;
+    --input: 20 10% 20%;
+    --ring: 350 45% 60%;
+    --sidebar-background: 20 15% 10%;
+    --sidebar-foreground: 30 20% 90%;
+    --sidebar-primary: 350 45% 60%;
+    --sidebar-primary-foreground: 20 15% 8%;
+    --sidebar-accent: 20 10% 16%;
+    --sidebar-accent-foreground: 30 20% 90%;
+    --sidebar-border: 20 10% 18%;
+    --sidebar-ring: 350 45% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  /* Reusable gradient background for hero sections */
+  .bg-hero-gradient {
+    background: var(--gradient-hero);
+  }
+
+  /* Gold gradient for special accents */
+  .bg-gold-gradient {
+    background: var(--gradient-gold);
+  }
+
+  /* Soft card shadow */
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Elevated shadow for modals/popovers */
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+
+  /* Soft primary shadow */
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* Glass effect for overlays */
+  .glass {
+    @apply backdrop-blur-md bg-background/80;
+  }
+}

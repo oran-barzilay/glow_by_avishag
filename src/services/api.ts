@@ -1,0 +1,262 @@
+/**
+ * API Service Layer
+ * =================
+ * This file contains all the functions that communicate with the backend.
+ * Currently, they return MOCK DATA to simulate API responses.
+ * 
+ * HOW TO SWAP WITH REAL API:
+ * --------------------------
+ * 1. Replace the mock imports with fetch/axios calls.
+ * 2. Point each function to your FastAPI endpoint (e.g., "http://localhost:8000/api/services").
+ * 3. The return types stay the same — your components won't need to change!
+ * 
+ * Example swap for getServices():
+ *   Before: return mockServices;
+ *   After:  const res = await fetch("/api/services"); return res.json();
+ */
+
+import {
+  Service,
+  TimeSlot,
+  Appointment,
+  DaySchedule,
+  BlockedDate,
+  BookingFormData,
+} from "./types";
+
+import {
+  mockServices,
+  mockAppointments,
+  mockWeeklySchedule,
+  mockBlockedDates,
+} from "./mockData";
+
+// We use a small delay to simulate network latency
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ============================================================
+// CLIENT-FACING API FUNCTIONS
+// ============================================================
+
+/**
+ * Fetches all available services from the salon.
+ * Replace with: GET /api/services
+ */
+export async function getServices(): Promise<Service[]> {
+  await delay(300);
+  return mockServices;
+}
+
+/**
+ * Fetches available time slots for a given date and service.
+ * The function generates slots based on the weekly schedule,
+ * filters out blocked dates/hours, and removes already-booked slots.
+ * 
+ * Replace with: GET /api/slots?date={date}&serviceId={serviceId}
+ */
+export async function getAvailableSlots(
+  date: string,
+  serviceId: string
+): Promise<TimeSlot[]> {
+  await delay(400);
+
+  // Parse the date to find the day of the week (0 = Sunday)
+  const dateObj = new Date(date + "T00:00:00");
+  const dayOfWeek = dateObj.getDay();
+
+  // Look up the schedule for this day of the week
+  const daySchedule = mockWeeklySchedule.find(
+    (d) => d.dayOfWeek === dayOfWeek
+  );
+
+  // If it's not a working day, return empty slots
+  if (!daySchedule || !daySchedule.isWorkingDay) {
+    return [];
+  }
+
+  // Check if the entire date is blocked
+  const blocked = mockBlockedDates.find((b) => b.date === date);
+  if (blocked && blocked.blockedHours === null) {
+    return []; // Entire day is blocked
+  }
+
+  // Generate 30-minute time slots between start and end time
+  const slots: TimeSlot[] = [];
+  const [startH, startM] = daySchedule.startTime.split(":").map(Number);
+  const [endH, endM] = daySchedule.endTime.split(":").map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  // Find the service to know its duration
+  const service = mockServices.find((s) => s.id === serviceId);
+  const slotInterval = 30; // Generate a slot every 30 minutes
+
+  for (let mins = startMinutes; mins < endMinutes; mins += slotInterval) {
+    const hours = Math.floor(mins / 60);
+    const minutes = mins % 60;
+    const timeStr = `${hours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")}`;
+
+    // Check if this specific hour is blocked
+    const isBlocked =
+      blocked?.blockedHours?.includes(timeStr) ?? false;
+
+    // Check if there's already an appointment at this time
+    const isBooked = mockAppointments.some(
+      (apt) =>
+        apt.date === date &&
+        apt.time === timeStr &&
+        (apt.status === "pending" || apt.status === "confirmed")
+    );
+
+    slots.push({
+      time: timeStr,
+      available: !isBlocked && !isBooked,
+    });
+  }
+
+  return slots;
+}
+
+/**
+ * Submits a new booking/appointment.
+ * Replace with: POST /api/bookings
+ */
+export async function createBooking(
+  data: BookingFormData
+): Promise<Appointment> {
+  await delay(600);
+
+  // Simulate creating an appointment and returning it
+  const service = mockServices.find((s) => s.id === data.serviceId);
+  const newAppointment: Appointment = {
+    id: `apt-${Date.now()}`,
+    serviceId: data.serviceId,
+    serviceName: service?.name ?? "Unknown",
+    date: data.date,
+    time: data.time,
+    clientName: data.clientName,
+    clientPhone: data.clientPhone,
+    notes: data.notes,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+
+  // In real app, the server stores this. For mock, we push to the array.
+  mockAppointments.push(newAppointment);
+
+  return newAppointment;
+}
+
+// ============================================================
+// ADMIN API FUNCTIONS
+// ============================================================
+
+/**
+ * Fetches all appointments (for admin dashboard).
+ * Replace with: GET /api/admin/appointments
+ */
+export async function getAppointments(): Promise<Appointment[]> {
+  await delay(300);
+  return [...mockAppointments].sort((a, b) => {
+    // Sort by date then time
+    const dateCompare = a.date.localeCompare(b.date);
+    return dateCompare !== 0 ? dateCompare : a.time.localeCompare(b.time);
+  });
+}
+
+/**
+ * Fetches the weekly schedule (default working hours).
+ * Replace with: GET /api/admin/schedule
+ */
+export async function getWeeklySchedule(): Promise<DaySchedule[]> {
+  await delay(200);
+  return [...mockWeeklySchedule];
+}
+
+/**
+ * Updates the schedule for a specific day of the week.
+ * Replace with: PUT /api/admin/schedule/{dayOfWeek}
+ */
+export async function updateDaySchedule(
+  schedule: DaySchedule
+): Promise<DaySchedule> {
+  await delay(300);
+
+  // Find and update the mock data in place
+  const index = mockWeeklySchedule.findIndex(
+    (d) => d.dayOfWeek === schedule.dayOfWeek
+  );
+  if (index !== -1) {
+    mockWeeklySchedule[index] = schedule;
+  }
+
+  return schedule;
+}
+
+/**
+ * Fetches all blocked dates.
+ * Replace with: GET /api/admin/blocked-dates
+ */
+export async function getBlockedDates(): Promise<BlockedDate[]> {
+  await delay(200);
+  return [...mockBlockedDates];
+}
+
+/**
+ * Adds a new blocked date or blocked hours.
+ * Replace with: POST /api/admin/blocked-dates
+ */
+export async function addBlockedDate(
+  data: Omit<BlockedDate, "id">
+): Promise<BlockedDate> {
+  await delay(300);
+
+  const newBlock: BlockedDate = {
+    id: `block-${Date.now()}`,
+    ...data,
+  };
+  mockBlockedDates.push(newBlock);
+
+  return newBlock;
+}
+
+/**
+ * Removes a blocked date.
+ * Replace with: DELETE /api/admin/blocked-dates/{id}
+ */
+export async function removeBlockedDate(id: string): Promise<void> {
+  await delay(200);
+
+  const index = mockBlockedDates.findIndex((b) => b.id === id);
+  if (index !== -1) {
+    mockBlockedDates.splice(index, 1);
+  }
+}
+
+/**
+ * Cancels an appointment (admin action).
+ * Replace with: PATCH /api/admin/appointments/{id}/cancel
+ */
+export async function cancelAppointment(id: string): Promise<void> {
+  await delay(300);
+
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt) {
+    apt.status = "cancelled";
+  }
+}
+
+/**
+ * Confirms a pending appointment (admin action).
+ * Replace with: PATCH /api/admin/appointments/{id}/confirm
+ */
+export async function confirmAppointment(id: string): Promise<void> {
+  await delay(300);
+
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt && apt.status === "pending") {
+    apt.status = "confirmed";
+  }
+}
