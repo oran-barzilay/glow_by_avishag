@@ -5,15 +5,20 @@
  */
 
 import { motion } from "framer-motion";
-import { Sparkles, Eye, Sun, LucideIcon } from "lucide-react";
+import { Sparkles, Eye, Sun, Heart, Scissors, Star, Flower2, LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Service } from "@/services/types";
+import { getServiceColorClasses } from "@/lib/serviceDisplay";
 
 // Map icon string names to actual Lucide icon components
 const iconMap: Record<string, LucideIcon> = {
   Sparkles,
   Eye,
   Sun,
+  Heart,
+  Scissors,
+  Star,
+  Flower2,
 };
 
 interface ServiceCardProps {
@@ -27,6 +32,7 @@ interface ServiceCardProps {
 export function ServiceCard({ service, onBook, index }: ServiceCardProps) {
   // Look up the icon component from our map, default to Sparkles
   const IconComponent = iconMap[service.icon] || Sparkles;
+  const colors = getServiceColorClasses(service.color);
 
   return (
     <motion.div
@@ -36,8 +42,10 @@ export function ServiceCard({ service, onBook, index }: ServiceCardProps) {
       className="group relative overflow-hidden rounded-lg border border-border bg-card p-6 shadow-card transition-all duration-300 hover:shadow-elevated hover:-translate-y-1"
     >
       {/* Decorative gradient circle behind the icon */}
-      <div className={`mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full bg-${service.color}/15`}>
-        <IconComponent className={`h-7 w-7 text-${service.color}`} />
+      <div
+        className={`mb-4 inline-flex h-14 w-14 items-center justify-center rounded-full ${colors.bg}`}
+      >
+        <IconComponent className={`h-7 w-7 ${colors.text}`} />
       </div>
 
       {/* Service name */}

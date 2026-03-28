@@ -260,3 +260,58 @@ export async function confirmAppointment(id: string): Promise<void> {
     apt.status = "confirmed";
   }
 }
+
+/**
+ * Updates an existing service (admin).
+ * Replace with: PUT /api/admin/services/{id}
+ */
+export async function updateService(service: Service): Promise<Service> {
+  await delay(250);
+
+  const index = mockServices.findIndex((s) => s.id === service.id);
+  if (index === -1) {
+    throw new Error("השירות לא נמצא");
+  }
+  mockServices[index] = { ...service };
+  return mockServices[index];
+}
+
+export type CreateServiceInput = Omit<Service, "id">;
+
+/**
+ * Adds a new service (admin).
+ * Replace with: POST /api/admin/services
+ */
+export async function addService(data: CreateServiceInput): Promise<Service> {
+  await delay(300);
+
+  const id = `svc-${Date.now()}`;
+  const newService: Service = { ...data, id };
+  mockServices.push(newService);
+  return newService;
+}
+
+/**
+ * Deletes a service (admin). Blocked if active appointments reference it.
+ * Replace with: DELETE /api/admin/services/{id}
+ */
+export async function deleteService(id: string): Promise<void> {
+  await delay(250);
+
+  const hasActiveBooking = mockAppointments.some(
+    (a) =>
+      a.serviceId === id &&
+      (a.status === "pending" || a.status === "confirmed")
+  );
+  if (hasActiveBooking) {
+    throw new Error(
+      "לא ניתן למחוק — יש תור פעיל או ממתין לאישור עבור שירות זה"
+    );
+  }
+
+  const index = mockServices.findIndex((s) => s.id === id);
+  if (index === -1) {
+    throw new Error("השירות לא נמצא");
+  }
+  mockServices.splice(index, 1);
+}

@@ -12,7 +12,17 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
 import { he } from "date-fns/locale";
-import { CalendarOff, Check, Clock, CalendarDays, LogOut, Trash2, Plus, X } from "lucide-react";
+import {
+  CalendarOff,
+  Check,
+  Clock,
+  CalendarDays,
+  LogOut,
+  Sparkles,
+  Trash2,
+  Plus,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -27,14 +37,16 @@ import { cn } from "@/lib/utils";
 import {
   getAppointments,
   getWeeklySchedule,
-  updateDaySchedule,
   getBlockedDates,
+  getServices,
+  updateDaySchedule,
   addBlockedDate,
   removeBlockedDate,
   cancelAppointment,
   confirmAppointment,
 } from "@/services/api";
-import { Appointment, DaySchedule, BlockedDate } from "@/services/types";
+import { AdminServicesTab } from "@/components/AdminServicesTab";
+import { Appointment, DaySchedule, BlockedDate, Service } from "@/services/types";
 import { toast } from "sonner";
 
 const appointmentStatusLabel = (status: string) => {
@@ -72,6 +84,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
   // State for adding a new blocked date
@@ -86,10 +99,12 @@ const Admin = ({ onLogout }: AdminProps) => {
       getAppointments(),
       getWeeklySchedule(),
       getBlockedDates(),
-    ]).then(([apts, sched, blocks]) => {
+      getServices(),
+    ]).then(([apts, sched, blocks, svc]) => {
       setAppointments(apts);
       setSchedule(sched);
       setBlockedDates(blocks);
+      setServices([...svc]);
       setLoading(false);
     });
   }, []);
@@ -203,7 +218,7 @@ const Admin = ({ onLogout }: AdminProps) => {
           <div className="text-start">
             <h1 className="mb-2 text-3xl font-bold">לוח בקרה</h1>
             <p className="text-muted-foreground">
-              ניהול יומן, תורים וזמינות
+              ניהול יומן, תורים, שירותים וזמינות
             </p>
           </div>
           <Button
@@ -220,10 +235,14 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         {/* ===== TABBED INTERFACE ===== */}
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 grid w-full grid-cols-3">
+          <TabsList className="mb-6 grid w-full grid-cols-2 sm:grid-cols-4">
             <TabsTrigger value="appointments" className="gap-2">
               <CalendarDays className="h-4 w-4" />
               <span className="hidden sm:inline">תורים</span>
+            </TabsTrigger>
+            <TabsTrigger value="services" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">שירותים</span>
             </TabsTrigger>
             <TabsTrigger value="schedule" className="gap-2">
               <Clock className="h-4 w-4" />
@@ -304,6 +323,11 @@ const Admin = ({ onLogout }: AdminProps) => {
                   ))
               )}
             </div>
+          </TabsContent>
+
+          {/* ===== TAB: SERVICES ===== */}
+          <TabsContent value="services">
+            <AdminServicesTab services={services} setServices={setServices} />
           </TabsContent>
 
           {/* ===== TAB 2: WORKING HOURS ===== */}

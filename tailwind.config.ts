@@ -65,6 +65,7 @@ export default {
         "service-nails": "hsl(var(--service-nails))",
         "service-brows": "hsl(var(--service-brows))",
         "service-tan": "hsl(var(--service-tan))",
+        "service-extra": "hsl(var(--service-extra))",
       },
       borderRadius: {
         lg: "var(--radius)",
