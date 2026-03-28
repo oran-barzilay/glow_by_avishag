@@ -14,7 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        heading: ['"Frank Ruhl Libre"', '"Heebo"', 'Georgia', 'serif'],
+        heading: ['"Heebo"', 'system-ui', 'sans-serif'],
         body: ['"Heebo"', 'system-ui', 'sans-serif'],
       },
       colors: {

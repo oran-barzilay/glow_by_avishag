@@ -49,6 +49,11 @@ const Booking = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingComplete, setBookingComplete] = useState(false);
 
+  // הגבלת מספר ימים קדימה לפי הגדרת האדמין
+  const maxAdvanceDays = parseInt(localStorage.getItem("maxAdvanceDays") ?? "30");
+  const maxBookingDate = new Date();
+  maxBookingDate.setDate(maxBookingDate.getDate() + maxAdvanceDays);
+
   // Load services on mount
   useEffect(() => {
     getServices().then((data) => {
@@ -260,7 +265,7 @@ const Booking = () => {
                   mode="single"
                   selected={selectedDate}
                   onSelect={handleDateSelect}
-                  disabled={(date) => date < new Date()}
+                  disabled={(date) => date < new Date() || date > maxBookingDate}
                   locale={he}
                   className="rounded-lg border border-border bg-card p-3 shadow-card pointer-events-auto"
                 />

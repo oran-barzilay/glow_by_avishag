@@ -14,6 +14,7 @@ import Index from "./pages/Index";
 import Booking from "./pages/Booking";
 import { AdminRoute } from "@/components/AdminRoute";
 import NotFound from "./pages/NotFound";
+import MyAppointments from "./pages/MyAppointments";
 
 // Create a React Query client for managing server state (caching, refetching, etc.)
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/booking" element={<Booking />} />
           <Route path="/admin" element={<AdminRoute />} />
+          <Route path="/my-appointments" element={<MyAppointments />} />
           {/* Catch-all route for 404 pages */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -45,14 +45,10 @@ const Index = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            {/* Small pill label */}
-            <span className="mb-4 inline-block rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold tracking-wider text-primary">
-              יופי ורווחה
-            </span>
-
-            {/* Main heading */}
-            <h1 className="mb-4 text-4xl font-bold leading-tight sm:text-5xl md:text-6xl">
-              Avishag Beja{" "}
+            {/* Main heading — Avishag Beja line 1, Glow Studio line 2 */}
+            <h1 className="mb-4 text-4xl font-bold leading-tight sm:text-5xl md:text-6xl" style={{ fontFamily: '"Frank Ruhl Libre", serif' }}>
+              Avishag Beja
+              <br />
               <span className="bg-hero-gradient bg-clip-text text-transparent">
                 Glow Studio
               </span>

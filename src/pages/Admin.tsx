@@ -93,6 +93,18 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [blockFullDay, setBlockFullDay] = useState(true);
   const [blockHours, setBlockHours] = useState("");
 
+  // כמה ימים קדימה ניתן לבחור תור
+  const [maxAdvanceDays, setMaxAdvanceDays] = useState<number>(() => {
+    const saved = localStorage.getItem("maxAdvanceDays");
+    return saved ? parseInt(saved) : 30;
+  });
+
+  const handleMaxAdvanceDaysChange = (value: number) => {
+    setMaxAdvanceDays(value);
+    localStorage.setItem("maxAdvanceDays", String(value));
+    toast.success("ההגדרה נשמרה");
+  };
+
   // Load all admin data on mount
   useEffect(() => {
     Promise.all([
@@ -235,7 +247,7 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         {/* ===== TABBED INTERFACE ===== */}
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 grid w-full grid-cols-2 sm:grid-cols-4">
+          <TabsList className="mb-6 grid w-full grid-cols-2 sm:grid-cols-5">
             <TabsTrigger value="appointments" className="gap-2">
               <CalendarDays className="h-4 w-4" />
               <span className="hidden sm:inline">תורים</span>
@@ -251,6 +263,10 @@ const Admin = ({ onLogout }: AdminProps) => {
             <TabsTrigger value="blocked" className="gap-2">
               <CalendarOff className="h-4 w-4" />
               <span className="hidden sm:inline">תאריכים חסומים</span>
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-2">
+              <Clock className="h-4 w-4" />
+              <span className="hidden sm:inline">הגדרות</span>
             </TabsTrigger>
           </TabsList>
 
@@ -506,6 +522,41 @@ const Admin = ({ onLogout }: AdminProps) => {
                   </div>
                 ))
               )}
+            </div>
+          </TabsContent>
+
+          {/* ===== TAB: SETTINGS ===== */}
+          <TabsContent value="settings">
+            <div className="rounded-lg border border-border bg-card p-6 shadow-card space-y-6">
+              <h3 className="text-lg font-semibold">הגדרות הזמנת תורים</h3>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">
+                  כמה ימים קדימה ניתן להזמין תור
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  לקוחות לא יוכלו לבחור תאריך מעבר למספר הימים שתגדיר כאן
+                </p>
+                <div className="flex items-center gap-3 mt-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={maxAdvanceDays}
+                    onChange={(e) => setMaxAdvanceDays(Number(e.target.value))}
+                    className="w-28"
+                    dir="ltr"
+                  />
+                  <span className="text-sm text-muted-foreground">ימים</span>
+                  <Button
+                    variant="hero"
+                    size="sm"
+                    onClick={() => handleMaxAdvanceDaysChange(maxAdvanceDays)}
+                  >
+                    שמור
+                  </Button>
+                </div>
+              </div>
             </div>
           </TabsContent>
         </Tabs>
