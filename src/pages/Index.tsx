@@ -4,7 +4,7 @@
  * Shows a hero section and service cards.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
@@ -14,13 +14,29 @@ import { getServices } from "@/services/api";
 import { Service } from "@/services/types";
 
 const Index = () => {
-  // State to hold the list of services fetched from the API
   const [services, setServices] = useState<Service[]>([]);
   const navigate = useNavigate();
+  const logoRef = useRef<HTMLDivElement>(null);
 
-  // Fetch services when the component first renders
   useEffect(() => {
     getServices().then(setServices);
+  }, []);
+
+  // מעדכן את ה-Navbar אם הלוגו בעמוד נראה
+  useEffect(() => {
+    const el = logoRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        document.documentElement.setAttribute(
+          "data-hero-logo",
+          entry.isIntersecting ? "visible" : "hidden"
+        );
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   /**
@@ -45,7 +61,16 @@ const Index = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7 }}
           >
-            {/* Main heading — Avishag Beja line 1, Glow Studio line 2 */}
+            {/* לוגו גדול במרכז */}
+            <div ref={logoRef} className="flex justify-center mb-6">
+              <img
+                src="/file.svg"
+                alt="Avishag Beja Logo"
+                className="w-40 h-auto sm:w-52 md:w-64 opacity-90"
+              />
+            </div>
+
+            {/* Main heading */}
             <h1 className="mb-4 text-4xl font-bold leading-tight sm:text-5xl md:text-6xl" style={{ fontFamily: '"Frank Ruhl Libre", serif' }}>
               Avishag Beja
               <br />
