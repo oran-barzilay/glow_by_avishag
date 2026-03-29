@@ -34,6 +34,19 @@ export interface Appointment {
   notes: string;
   status: "pending" | "confirmed" | "cancelled" | "completed";
   createdAt: string;   // ISO datetime string
+  lateMinutes?: number | null;  // כמה דקות איחר הלקוח (null = לא הוזן)
+}
+
+/** פרופיל לקוח עם סטטיסטיקות */
+export interface ClientProfile {
+  phone: string;
+  name: string;
+  totalAppointments: number;
+  completedAppointments: number;
+  cancelledAppointments: number;
+  avgLateMinutes: number | null;
+  score: number; // 0-100
+  lastAppointment: string | null;
 }
 
 /** Represents the working hours for a specific day of the week */

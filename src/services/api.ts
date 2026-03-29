@@ -13,6 +13,7 @@ import {
   DaySchedule,
   BlockedDate,
   BookingFormData,
+  ClientProfile,
 } from "./types";
 
 import {
@@ -27,6 +28,8 @@ import {
   createAppointment as dbCreate,
   updateAppointmentStatus,
   isTimeSlotTaken,
+  updateLateMinutes as dbUpdateLateMinutes,
+  getClientProfiles as dbGetClientProfiles,
 } from "@/lib/db";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -318,3 +321,50 @@ export async function deleteService(id: string): Promise<void> {
   }
   mockServices.splice(index, 1);
 }
+
+/**
+ * Updates late minutes for a completed appointment.
+ */
+export async function updateLateMinutes(
+  id: string,
+  lateMinutes: number | null
+): Promise<void> {
+  if (useSupabase) {
+    return dbUpdateLateMinutes(id, lateMinutes);
+  }
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt) apt.lateMinutes = lateMinutes;
+}
+
+/**
+ * Fetches client profiles with stats (admin).
+ */
+export async function getClientProfiles(): Promise<ClientProfile[]> {
+  if (useSupabase) {
+    return dbGetClientProfiles();
+  }
+  // mock: build profiles from mockAppointments
+  const map: Record<string, ClientProfile> = {};
+  for (const apt of mockAppointments) {
+    if (!map[apt.clientPhone]) {
+      map[apt.clientPhone] = {
+        phone: apt.clientPhone,
+        name: apt.clientName,
+        totalAppointments: 0,
+        completedAppointments: 0,
+        cancelledAppointments: 0,
+        avgLateMinutes: null,
+        score: 100,
+        lastAppointment: null,
+      };
+    }
+    const p = map[apt.clientPhone];
+    p.totalAppointments++;
+    if (apt.status === "completed") p.completedAppointments++;
+    if (apt.status === "cancelled") p.cancelledAppointments++;
+    if (!p.lastAppointment || apt.date > p.lastAppointment)
+      p.lastAppointment = apt.date;
+  }
+  return Object.values(map);
+}
+

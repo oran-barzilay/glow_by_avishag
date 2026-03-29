@@ -22,6 +22,12 @@ import {
   Trash2,
   Plus,
   X,
+  BarChart2,
+  Users,
+  TrendingUp,
+  Timer,
+  Star,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,9 +50,11 @@ import {
   removeBlockedDate,
   cancelAppointment,
   confirmAppointment,
+  updateLateMinutes,
+  getClientProfiles,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
-import { Appointment, DaySchedule, BlockedDate, Service } from "@/services/types";
+import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile } from "@/services/types";
 import { toast } from "sonner";
 
 const appointmentStatusLabel = (status: string) => {
@@ -85,6 +93,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [clientProfiles, setClientProfiles] = useState<ClientProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
   // State for adding a new blocked date
@@ -92,6 +101,10 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [blockReason, setBlockReason] = useState("");
   const [blockFullDay, setBlockFullDay] = useState(true);
   const [blockHours, setBlockHours] = useState("");
+
+  // Late minutes editing
+  const [lateEditId, setLateEditId] = useState<string | null>(null);
+  const [lateEditValue, setLateEditValue] = useState<string>("");
 
   // כמה ימים קדימה ניתן לבחור תור
   const [maxAdvanceDays, setMaxAdvanceDays] = useState<number>(() => {
@@ -112,11 +125,13 @@ const Admin = ({ onLogout }: AdminProps) => {
       getWeeklySchedule(),
       getBlockedDates(),
       getServices(),
-    ]).then(([apts, sched, blocks, svc]) => {
+      getClientProfiles(),
+    ]).then(([apts, sched, blocks, svc, profiles]) => {
       setAppointments(apts);
       setSchedule(sched);
       setBlockedDates(blocks);
       setServices([...svc]);
+      setClientProfiles(profiles);
       setLoading(false);
     });
   }, []);
@@ -214,6 +229,20 @@ const Admin = ({ onLogout }: AdminProps) => {
     toast.success("התור אושר");
   };
 
+  const handleSaveLateMinutes = async (id: string) => {
+    const val = lateEditValue === "" ? null : Number(lateEditValue);
+    await updateLateMinutes(id, val);
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, lateMinutes: val } : a))
+    );
+    // Refresh profiles
+    const profiles = await getClientProfiles();
+    setClientProfiles(profiles);
+    setLateEditId(null);
+    setLateEditValue("");
+    toast.success("האיחור נשמר");
+  };
+
   if (loading) {
     return (
       <div dir="rtl" lang="he" className="flex min-h-[60vh] items-center justify-center">
@@ -247,26 +276,30 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         {/* ===== TABBED INTERFACE ===== */}
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 grid w-full grid-cols-2 sm:grid-cols-5">
-            <TabsTrigger value="appointments" className="gap-2">
-              <CalendarDays className="h-4 w-4" />
+          <TabsList className="mb-6 grid w-full grid-cols-3 sm:grid-cols-6 gap-1">
+            <TabsTrigger value="appointments" className="gap-1 text-xs sm:text-sm">
+              <CalendarDays className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">תורים</span>
             </TabsTrigger>
-            <TabsTrigger value="services" className="gap-2">
-              <Sparkles className="h-4 w-4" />
+            <TabsTrigger value="services" className="gap-1 text-xs sm:text-sm">
+              <Sparkles className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">שירותים</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="gap-2">
-              <Clock className="h-4 w-4" />
+            <TabsTrigger value="schedule" className="gap-1 text-xs sm:text-sm">
+              <Clock className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">שעות פעילות</span>
             </TabsTrigger>
-            <TabsTrigger value="blocked" className="gap-2">
-              <CalendarOff className="h-4 w-4" />
-              <span className="hidden sm:inline">תאריכים חסומים</span>
+            <TabsTrigger value="blocked" className="gap-1 text-xs sm:text-sm">
+              <CalendarOff className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">חסומים</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-2">
-              <Clock className="h-4 w-4" />
-              <span className="hidden sm:inline">הגדרות</span>
+            <TabsTrigger value="stats" className="gap-1 text-xs sm:text-sm">
+              <BarChart2 className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">סטטיסטיקות</span>
+            </TabsTrigger>
+            <TabsTrigger value="clients" className="gap-1 text-xs sm:text-sm">
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">לקוחות</span>
             </TabsTrigger>
           </TabsList>
 
@@ -310,6 +343,29 @@ const Admin = ({ onLogout }: AdminProps) => {
                             הערה: {apt.notes}
                           </p>
                         )}
+                        {/* Late minutes display */}
+                        {apt.lateMinutes != null && (
+                          <p className="mt-1 text-xs text-amber-600 font-medium">
+                            ⏱ איחר {apt.lateMinutes} דקות
+                          </p>
+                        )}
+                        {/* Late minutes edit inline */}
+                        {lateEditId === apt.id && (
+                          <div className="mt-2 flex items-center gap-2" dir="ltr">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={120}
+                              placeholder="0"
+                              value={lateEditValue}
+                              onChange={(e) => setLateEditValue(e.target.value)}
+                              className="w-24 h-8 text-sm"
+                            />
+                            <span className="text-xs text-muted-foreground" dir="rtl">דקות איחור</span>
+                            <Button size="sm" variant="hero" className="h-8 text-xs" onClick={() => handleSaveLateMinutes(apt.id)}>שמור</Button>
+                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setLateEditId(null)}>ביטול</Button>
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                         {apt.status === "pending" && (
@@ -334,6 +390,21 @@ const Admin = ({ onLogout }: AdminProps) => {
                             <X className="h-3 w-3" />
                           </Button>
                         )}
+                        {/* Late minutes button for confirmed/completed */}
+                        {(apt.status === "confirmed" || apt.status === "completed") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setLateEditId(apt.id);
+                              setLateEditValue(apt.lateMinutes != null ? String(apt.lateMinutes) : "");
+                            }}
+                            className="gap-1 text-amber-600 border-amber-300 hover:text-amber-700"
+                          >
+                            <Timer className="h-3.5 w-3.5" />
+                            איחור
+                          </Button>
+                        )}
                       </div>
                     </motion.div>
                   ))
@@ -353,56 +424,92 @@ const Admin = ({ onLogout }: AdminProps) => {
                 <div
                   key={day.dayOfWeek}
                   className={cn(
-                    "flex flex-col gap-3 rounded-lg border border-border p-4 transition-colors sm:flex-row sm:items-center",
+                    "rounded-lg border border-border p-4 transition-colors",
                     day.isWorkingDay ? "bg-card" : "bg-muted/50"
                   )}
                 >
-                  {/* Day name (first in DOM for RTL reading order) + toggle */}
-                  <div className="flex min-w-[140px] items-center gap-3">
-                    <span
-                      className={cn(
-                        "font-medium",
-                        !day.isWorkingDay && "text-muted-foreground"
-                      )}
-                    >
-                      {day.dayName}
-                    </span>
-                    <Switch
-                      checked={day.isWorkingDay}
-                      onCheckedChange={() => handleToggleDay(day.dayOfWeek)}
-                    />
-                  </div>
-
-                  {/* Time inputs (only shown if it's a working day) — LTR for native time controls */}
-                  {day.isWorkingDay && (
-                    <div className="flex items-center gap-2" dir="ltr">
-                      <Input
-                        type="time"
-                        value={day.startTime}
-                        onChange={(e) =>
-                          handleTimeChange(day.dayOfWeek, "startTime", e.target.value)
-                        }
-                        className="w-32"
+                  {/* Row: toggle + day name + times */}
+                  <div className="flex flex-wrap items-center gap-4">
+                    {/* Toggle + day name - fixed width so they align */}
+                    <div className="flex items-center gap-3 w-36 shrink-0">
+                      <Switch
+                        checked={day.isWorkingDay}
+                        onCheckedChange={() => handleToggleDay(day.dayOfWeek)}
                       />
-                      <span className="text-sm text-muted-foreground" dir="rtl">
-                        עד
+                      <span
+                        className={cn(
+                          "font-semibold text-sm",
+                          !day.isWorkingDay && "text-muted-foreground"
+                        )}
+                      >
+                        {day.dayName}
                       </span>
-                      <Input
-                        type="time"
-                        value={day.endTime}
-                        onChange={(e) =>
-                          handleTimeChange(day.dayOfWeek, "endTime", e.target.value)
-                        }
-                        className="w-32"
-                      />
                     </div>
-                  )}
 
-                  {!day.isWorkingDay && (
-                    <span className="text-sm text-muted-foreground">סגור</span>
-                  )}
+                    {/* Time inputs */}
+                    {day.isWorkingDay ? (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-medium text-primary">שעת התחלה</span>
+                          <Input
+                            type="time"
+                            value={day.startTime}
+                            onChange={(e) =>
+                              handleTimeChange(day.dayOfWeek, "startTime", e.target.value)
+                            }
+                            className="w-32 border-primary/40 focus:border-primary"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-medium text-muted-foreground">שעת סיום</span>
+                          <Input
+                            type="time"
+                            value={day.endTime}
+                            onChange={(e) =>
+                              handleTimeChange(day.dayOfWeek, "endTime", e.target.value)
+                            }
+                            className="w-32"
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">סגור</span>
+                    )}
+                  </div>
                 </div>
               ))}
+            </div>
+
+            {/* Advance booking setting - moved here from Settings tab */}
+            <div className="mt-6 rounded-lg border border-border bg-card p-5 shadow-card space-y-3">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                הזמנה מקסימלית קדימה
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                לקוחות לא יוכלו לבחור תאריך מעבר למספר הימים שתגדירי כאן
+              </p>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={maxAdvanceDays}
+                  onChange={(e) => setMaxAdvanceDays(Number(e.target.value))}
+                  className="w-28"
+                  dir="ltr"
+                />
+                <span className="text-sm text-muted-foreground">ימים</span>
+                <Button
+                  variant="hero"
+                  size="sm"
+                  onClick={() => handleMaxAdvanceDaysChange(maxAdvanceDays)}
+                >
+                  שמור
+                </Button>
+              </div>
             </div>
           </TabsContent>
 
@@ -557,6 +664,194 @@ const Admin = ({ onLogout }: AdminProps) => {
                   </Button>
                 </div>
               </div>
+            </div>
+          </TabsContent>
+
+          {/* ===== TAB: STATS ===== */}
+          <TabsContent value="stats">
+            {(() => {
+              const total = appointments.length;
+              const confirmed = appointments.filter(a => a.status === "confirmed").length;
+              const completed = appointments.filter(a => a.status === "completed").length;
+              const cancelled = appointments.filter(a => a.status === "cancelled").length;
+              const pending = appointments.filter(a => a.status === "pending").length;
+              const cancelRate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+
+              // Appointments per day of week
+              const dayCount: Record<string, number> = {};
+              appointments.forEach(a => {
+                const d = new Date(a.date + "T00:00:00");
+                const name = format(d, "EEEE", { locale: he });
+                dayCount[name] = (dayCount[name] ?? 0) + 1;
+              });
+              const busiestDay = Object.entries(dayCount).sort((a, b) => b[1] - a[1])[0];
+
+              // Appointments per service
+              const serviceCount: Record<string, number> = {};
+              appointments.forEach(a => {
+                serviceCount[a.serviceName] = (serviceCount[a.serviceName] ?? 0) + 1;
+              });
+              const topService = Object.entries(serviceCount).sort((a, b) => b[1] - a[1])[0];
+
+              // Late appointments
+              const lateApts = appointments.filter(a => a.lateMinutes != null && a.lateMinutes > 0);
+              const avgLate = lateApts.length > 0
+                ? Math.round(lateApts.reduce((s, a) => s + (a.lateMinutes ?? 0), 0) / lateApts.length)
+                : null;
+
+              // Monthly counts (last 6 months)
+              const monthMap: Record<string, number> = {};
+              appointments.forEach(a => {
+                const month = a.date.slice(0, 7); // YYYY-MM
+                monthMap[month] = (monthMap[month] ?? 0) + 1;
+              });
+              const months = Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0])).slice(-6);
+
+              return (
+                <div className="space-y-6">
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="rounded-lg border bg-card p-4 text-center shadow-card">
+                      <div className="text-2xl font-bold text-primary">{total}</div>
+                      <div className="text-xs text-muted-foreground mt-1">סה״כ תורים</div>
+                    </div>
+                    <div className="rounded-lg border bg-card p-4 text-center shadow-card">
+                      <div className="text-2xl font-bold text-green-600">{confirmed + completed}</div>
+                      <div className="text-xs text-muted-foreground mt-1">מאושרים / הושלמו</div>
+                    </div>
+                    <div className="rounded-lg border bg-card p-4 text-center shadow-card">
+                      <div className="text-2xl font-bold text-amber-600">{pending}</div>
+                      <div className="text-xs text-muted-foreground mt-1">ממתינים לאישור</div>
+                    </div>
+                    <div className="rounded-lg border bg-card p-4 text-center shadow-card">
+                      <div className="text-2xl font-bold text-red-500">{cancelRate}%</div>
+                      <div className="text-xs text-muted-foreground mt-1">שיעור ביטולים</div>
+                    </div>
+                  </div>
+
+                  {/* Highlights */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-lg border bg-card p-4 shadow-card flex items-center gap-3">
+                      <TrendingUp className="h-8 w-8 text-primary shrink-0" />
+                      <div>
+                        <div className="text-sm font-semibold">יום עמוס ביותר</div>
+                        <div className="text-lg font-bold">{busiestDay ? `${busiestDay[0]} (${busiestDay[1]})` : "—"}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border bg-card p-4 shadow-card flex items-center gap-3">
+                      <Sparkles className="h-8 w-8 text-primary shrink-0" />
+                      <div>
+                        <div className="text-sm font-semibold">שירות פופולרי</div>
+                        <div className="text-lg font-bold">{topService ? `${topService[0]} (${topService[1]})` : "—"}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border bg-card p-4 shadow-card flex items-center gap-3">
+                      <Timer className="h-8 w-8 text-amber-500 shrink-0" />
+                      <div>
+                        <div className="text-sm font-semibold">ממוצע איחור</div>
+                        <div className="text-lg font-bold">{avgLate != null ? `${avgLate} דק׳` : "לא הוזן"}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monthly bar chart */}
+                  {months.length > 0 && (
+                    <div className="rounded-lg border bg-card p-5 shadow-card">
+                      <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                        <BarChart2 className="h-4 w-4 text-primary" />
+                        תורים לפי חודש (6 חודשים אחרונים)
+                      </h3>
+                      <div className="flex items-end gap-2 h-32">
+                        {months.map(([month, count]) => {
+                          const maxCount = Math.max(...months.map(m => m[1]));
+                          const heightPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                          return (
+                            <div key={month} className="flex flex-col items-center gap-1 flex-1">
+                              <span className="text-xs font-bold text-primary">{count}</span>
+                              <div
+                                className="w-full rounded-t bg-primary/70 transition-all"
+                                style={{ height: `${heightPct}%`, minHeight: "4px" }}
+                              />
+                              <span className="text-xs text-muted-foreground">{month.slice(5)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </TabsContent>
+
+          {/* ===== TAB: CLIENTS ===== */}
+          <TabsContent value="clients">
+            <div className="space-y-3">
+              {clientProfiles.length === 0 ? (
+                <p className="py-12 text-center text-muted-foreground">אין נתוני לקוחות</p>
+              ) : (
+                clientProfiles.map((client) => {
+                  const scoreColor =
+                    client.score >= 80 ? "text-green-600" :
+                    client.score >= 50 ? "text-amber-500" : "text-red-500";
+                  const scoreBg =
+                    client.score >= 80 ? "bg-green-50 border-green-200" :
+                    client.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+                  return (
+                    <div
+                      key={client.phone}
+                      className={cn("rounded-lg border p-4 shadow-card flex flex-col sm:flex-row sm:items-center gap-4", scoreBg)}
+                    >
+                      {/* Score circle */}
+                      <div className={cn("flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 shrink-0 mx-auto sm:mx-0", scoreBg)}>
+                        <span className={cn("text-xl font-bold", scoreColor)}>{client.score}</span>
+                        <Star className={cn("h-3 w-3", scoreColor)} />
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 space-y-1">
+                        <div className="font-semibold text-foreground">{client.name}</div>
+                        <div className="text-sm text-muted-foreground">{client.phone}</div>
+                        <div className="flex flex-wrap gap-3 text-xs mt-1">
+                          <span className="flex items-center gap-1">
+                            <CalendarDays className="h-3 w-3" /> {client.totalAppointments} תורים
+                          </span>
+                          <span className="flex items-center gap-1 text-red-500">
+                            <AlertTriangle className="h-3 w-3" /> {client.cancelledAppointments} ביטולים
+                          </span>
+                          {client.avgLateMinutes != null && (
+                            <span className="flex items-center gap-1 text-amber-600">
+                              <Timer className="h-3 w-3" /> איחור ממוצע: {Math.round(client.avgLateMinutes)} דק׳
+                            </span>
+                          )}
+                          {client.lastAppointment && (
+                            <span className="text-muted-foreground">
+                              תור אחרון: {client.lastAppointment}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Score label */}
+                      <div className="text-center shrink-0">
+                        <div className={cn("text-xs font-semibold", scoreColor)}>
+                          {client.score >= 80 ? "לקוח מעולה ⭐" :
+                           client.score >= 50 ? "לקוח בינוני ⚠️" : "לקוח בעייתי 🚨"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Legend */}
+            <div className="mt-4 rounded-lg border bg-muted/30 p-4 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground mb-2">איך מחושב הציון?</p>
+              <p>• מתחיל מ-100 נקודות</p>
+              <p>• כל ביטול מורד עד 50 נק׳ (בהתאם לאחוז ביטולים)</p>
+              <p>• איחור ממוצע מוריד עד 30 נק׳ (5 נק׳ לכל 5 דקות איחור)</p>
+              <p className="mt-2">💡 כדי לתעד איחור - לחץ על כפתור "איחור" בטאב התורים לאחר אישור התור</p>
             </div>
           </TabsContent>
         </Tabs>

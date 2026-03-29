@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { Appointment, BookingFormData } from "@/services/types";
+import type { Appointment, BookingFormData, ClientProfile } from "@/services/types";
 
 // ── שליפת כל התורים (לממשק ניהול) ──────────────────────────────────────
 export async function getAllAppointments(): Promise<Appointment[]> {
@@ -83,6 +83,80 @@ export async function isTimeSlotTaken(
   return !!data;
 }
 
+// ── עדכון דקות איחור לתור ────────────────────────────────────────────────
+export async function updateLateMinutes(
+  id: string,
+  lateMinutes: number | null
+): Promise<void> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({ late_minutes: lateMinutes })
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+// ── שליפת פרופילי לקוחות ─────────────────────────────────────────────────
+export async function getClientProfiles(): Promise<ClientProfile[]> {
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("*")
+    .order("date", { ascending: false });
+
+  if (error) throw error;
+  const rows = data ?? [];
+
+  // קבץ לפי טלפון
+  const map: Record<string, ClientProfile> = {};
+  for (const row of rows) {
+    const phone = row.phone ?? "";
+    if (!map[phone]) {
+      map[phone] = {
+        phone,
+        name: row.name ?? "",
+        totalAppointments: 0,
+        completedAppointments: 0,
+        cancelledAppointments: 0,
+        avgLateMinutes: null,
+        score: 100,
+        lastAppointment: null,
+      };
+    }
+    const p = map[phone];
+    p.totalAppointments++;
+    if (row.status === "completed") p.completedAppointments++;
+    if (row.status === "cancelled") p.cancelledAppointments++;
+    if (!p.lastAppointment || row.date > p.lastAppointment)
+      p.lastAppointment = row.date;
+  }
+
+  // חשב ממוצע איחור וציון
+  for (const phone of Object.keys(map)) {
+    const p = map[phone];
+    const lateRows = rows.filter(
+      (r) => r.phone === phone && typeof r.late_minutes === "number"
+    );
+    if (lateRows.length > 0) {
+      p.avgLateMinutes =
+        lateRows.reduce((sum: number, r: Record<string,number>) => sum + (r.late_minutes ?? 0), 0) /
+        lateRows.length;
+    }
+
+    // ציון: מתחיל מ-100, מחסיר על ביטולים ואיחורים
+    let score = 100;
+    if (p.totalAppointments > 0) {
+      const cancelRate = p.cancelledAppointments / p.totalAppointments;
+      score -= Math.round(cancelRate * 50); // עד -50 על ביטולים
+    }
+    if (p.avgLateMinutes !== null) {
+      score -= Math.min(30, Math.round(p.avgLateMinutes / 5) * 5); // עד -30 על איחורים
+    }
+    p.score = Math.max(0, score);
+  }
+
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, "he"));
+}
+
 // ── מיפוי שורת DB → טיפוס Appointment ───────────────────────────────────
 function mapRow(row: Record<string, string>): Appointment {
   return {
@@ -96,6 +170,7 @@ function mapRow(row: Record<string, string>): Appointment {
     notes: row.notes ?? "",
     status: row.status as Appointment["status"],
     createdAt: row.created_at,
+    lateMinutes: row.late_minutes != null ? Number(row.late_minutes) : null,
   };
 }
 
