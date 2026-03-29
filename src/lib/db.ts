@@ -157,6 +157,25 @@ export async function getClientProfiles(): Promise<ClientProfile[]> {
   return Object.values(map).sort((a, b) => a.name.localeCompare(b.name, "he"));
 }
 
+// ── שליפת סיסמת ניהול ────────────────────────────────────────────────────
+export async function getAdminPassword(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "admin_password")
+    .maybeSingle();
+  if (error) return null;
+  return data?.value ?? null;
+}
+
+// ── שמירת סיסמת ניהול ────────────────────────────────────────────────────
+export async function setAdminPassword(password: string): Promise<void> {
+  const { error } = await supabase
+    .from("settings")
+    .upsert({ key: "admin_password", value: password }, { onConflict: "key" });
+  if (error) throw error;
+}
+
 // ── מיפוי שורת DB → טיפוס Appointment ───────────────────────────────────
 function mapRow(row: Record<string, string>): Appointment {
   return {

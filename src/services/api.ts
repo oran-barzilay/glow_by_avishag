@@ -30,6 +30,8 @@ import {
   isTimeSlotTaken,
   updateLateMinutes as dbUpdateLateMinutes,
   getClientProfiles as dbGetClientProfiles,
+  getAdminPassword as dbGetAdminPassword,
+  setAdminPassword as dbSetAdminPassword,
 } from "@/lib/db";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -366,5 +368,21 @@ export async function getClientProfiles(): Promise<ClientProfile[]> {
       p.lastAppointment = apt.date;
   }
   return Object.values(map);
+}
+
+/**
+ * Fetches the admin password from DB.
+ */
+export async function getAdminPassword(): Promise<string | null> {
+  if (useSupabase) return dbGetAdminPassword();
+  return localStorage.getItem("adminPassword");
+}
+
+/**
+ * Saves a new admin password to DB.
+ */
+export async function setAdminPassword(password: string): Promise<void> {
+  if (useSupabase) return dbSetAdminPassword(password);
+  localStorage.setItem("adminPassword", password);
 }
 

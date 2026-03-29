@@ -1,8 +1,8 @@
 import { FormEvent, useState } from "react";
-import { Lock } from "lucide-react";
+import { Lock, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { tryAdminLogin } from "@/lib/adminAuth";
+import { tryAdminLoginAsync } from "@/lib/adminAuth";
 
 interface AdminLoginProps {
   onSuccess: () => void;
@@ -11,14 +11,22 @@ interface AdminLoginProps {
 export function AdminLogin({ onSuccess }: AdminLoginProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(false);
-    if (tryAdminLogin(password)) {
-      onSuccess();
-    } else {
-      setError(true);
+    setLoading(true);
+    try {
+      const ok = await tryAdminLoginAsync(password);
+      if (ok) {
+        onSuccess();
+      } else {
+        setError(true);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -39,21 +47,36 @@ export function AdminLogin({ onSuccess }: AdminLoginProps) {
             <label htmlFor="admin-password" className="mb-1.5 block text-sm font-medium">
               סיסמה
             </label>
-            <Input
-              id="admin-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="text-start"
-              dir="ltr"
-            />
+            <div className="relative">
+              <Input
+                id="admin-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="text-start pr-10"
+                dir="ltr"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             {error && (
               <p className="mt-2 text-sm text-destructive">סיסמה שגויה</p>
             )}
           </div>
-          <Button type="submit" variant="hero" className="w-full">
-            כניסה
+          <Button type="submit" variant="hero" className="w-full" disabled={loading}>
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                מתחבר...
+              </span>
+            ) : "כניסה"}
           </Button>
         </form>
       </div>
