@@ -1,18 +1,9 @@
 /**
  * API Service Layer
  * =================
- * This file contains all the functions that communicate with the backend.
- * Currently, they return MOCK DATA to simulate API responses.
- * 
- * HOW TO SWAP WITH REAL API:
- * --------------------------
- * 1. Replace the mock imports with fetch/axios calls.
- * 2. Point each function to your FastAPI endpoint (e.g., "http://localhost:8000/api/services").
- * 3. The return types stay the same — your components won't need to change!
- * 
- * Example swap for getServices():
- *   Before: return mockServices;
- *   After:  const res = await fetch("/api/services"); return res.json();
+ * כשמשתני VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY מוגדרים —
+ * הפונקציות הרלוונטיות לתורים קוראות/כותבות ל-Supabase.
+ * אחרת נעשה שימוש ב-mock data (לפיתוח מקומי).
  */
 
 import {
@@ -31,8 +22,19 @@ import {
   mockBlockedDates,
 } from "./mockData";
 
-// We use a small delay to simulate network latency
+import {
+  getAllAppointments as dbGetAll,
+  createAppointment as dbCreate,
+  updateAppointmentStatus,
+  isTimeSlotTaken,
+} from "@/lib/db";
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// האם Supabase מוגדר?
+const useSupabase = !!(
+  import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ============================================================
 // CLIENT-FACING API FUNCTIONS
@@ -103,12 +105,14 @@ export async function getAvailableSlots(
       blocked?.blockedHours?.includes(timeStr) ?? false;
 
     // Check if there's already an appointment at this time
-    const isBooked = mockAppointments.some(
-      (apt) =>
-        apt.date === date &&
-        apt.time === timeStr &&
-        (apt.status === "pending" || apt.status === "confirmed")
-    );
+    const isBooked = useSupabase
+      ? await isTimeSlotTaken(date, timeStr)
+      : mockAppointments.some(
+          (apt) =>
+            apt.date === date &&
+            apt.time === timeStr &&
+            (apt.status === "pending" || apt.status === "confirmed")
+        );
 
     slots.push({
       time: timeStr,
@@ -121,14 +125,16 @@ export async function getAvailableSlots(
 
 /**
  * Submits a new booking/appointment.
- * Replace with: POST /api/bookings
  */
 export async function createBooking(
   data: BookingFormData
 ): Promise<Appointment> {
-  await delay(600);
+  if (useSupabase) {
+    const service = mockServices.find((s) => s.id === data.serviceId);
+    return dbCreate({ ...data, serviceId: data.serviceId, serviceName: service?.name ?? data.serviceId } as any);
+  }
 
-  // Simulate creating an appointment and returning it
+  await delay(600);
   const service = mockServices.find((s) => s.id === data.serviceId);
   const newAppointment: Appointment = {
     id: `apt-${Date.now()}`,
@@ -142,8 +148,6 @@ export async function createBooking(
     status: "pending",
     createdAt: new Date().toISOString(),
   };
-
-  // In real app, the server stores this. For mock, we push to the array.
   mockAppointments.push(newAppointment);
 
   return newAppointment;
@@ -155,12 +159,13 @@ export async function createBooking(
 
 /**
  * Fetches all appointments (for admin dashboard).
- * Replace with: GET /api/admin/appointments
  */
 export async function getAppointments(): Promise<Appointment[]> {
+  if (useSupabase) {
+    return dbGetAll();
+  }
   await delay(300);
   return [...mockAppointments].sort((a, b) => {
-    // Sort by date then time
     const dateCompare = a.date.localeCompare(b.date);
     return dateCompare !== 0 ? dateCompare : a.time.localeCompare(b.time);
   });
@@ -237,28 +242,26 @@ export async function removeBlockedDate(id: string): Promise<void> {
 
 /**
  * Cancels an appointment (admin action).
- * Replace with: PATCH /api/admin/appointments/{id}/cancel
  */
 export async function cancelAppointment(id: string): Promise<void> {
-  await delay(300);
-
-  const apt = mockAppointments.find((a) => a.id === id);
-  if (apt) {
-    apt.status = "cancelled";
+  if (useSupabase) {
+    return updateAppointmentStatus(id, "cancelled");
   }
+  await delay(300);
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt) apt.status = "cancelled";
 }
 
 /**
  * Confirms a pending appointment (admin action).
- * Replace with: PATCH /api/admin/appointments/{id}/confirm
  */
 export async function confirmAppointment(id: string): Promise<void> {
-  await delay(300);
-
-  const apt = mockAppointments.find((a) => a.id === id);
-  if (apt && apt.status === "pending") {
-    apt.status = "confirmed";
+  if (useSupabase) {
+    return updateAppointmentStatus(id, "confirmed");
   }
+  await delay(300);
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt && apt.status === "pending") apt.status = "confirmed";
 }
 
 /**
