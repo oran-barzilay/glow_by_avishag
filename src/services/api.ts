@@ -33,6 +33,8 @@ import {
   createTherapist as dbCreateTherapist,
   updateTherapist as dbUpdateTherapist,
   deleteTherapist as dbDeleteTherapist,
+  rescheduleAppointment as dbReschedule,
+  deleteAppointment as dbDeleteAppointment,
 } from "@/lib/db";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -168,7 +170,17 @@ export async function createBooking(data: BookingFormData): Promise<Appointment>
   if (useSupabase) {
     const allServices = await getServices();
     const service = allServices.find((s) => s.id === data.serviceId);
-    return dbCreate({ ...data, serviceName: service?.name ?? data.serviceId } as BookingFormData & { serviceName: string });
+    // מצא שם מטפלת
+    let therapistName: string | undefined;
+    if (data.therapistId) {
+      const therapistList = await dbGetAllTherapists();
+      therapistName = therapistList.find((t) => t.id === data.therapistId)?.name;
+    }
+    return dbCreate({
+      ...data,
+      serviceName: service?.name ?? data.serviceId,
+      therapistName,
+    } as BookingFormData & { serviceName: string; therapistName?: string });
   }
   await delay(600);
   const service = mockServices.find((s) => s.id === data.serviceId);
@@ -297,6 +309,20 @@ export async function cancelAppointment(id: string): Promise<void> {
   await delay(300);
   const apt = mockAppointments.find((a) => a.id === id);
   if (apt) apt.status = "cancelled";
+}
+
+export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+  if (useSupabase) return dbReschedule(id, date, time);
+  await delay(300);
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt) { apt.date = date; apt.time = time; }
+}
+
+export async function deleteAppointment(id: string): Promise<void> {
+  if (useSupabase) return dbDeleteAppointment(id);
+  await delay(200);
+  const idx = mockAppointments.findIndex((a) => a.id === id);
+  if (idx !== -1) mockAppointments.splice(idx, 1);
 }
 
 export async function confirmAppointment(id: string): Promise<void> {

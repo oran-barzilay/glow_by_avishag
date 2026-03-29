@@ -51,6 +51,7 @@ const Booking = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingComplete, setBookingComplete] = useState(false);
+  const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
 
   // הגבלת מספר ימים קדימה לפי הגדרת האדמין
   const maxAdvanceDays = parseInt(localStorage.getItem("maxAdvanceDays") ?? "30");
@@ -71,17 +72,26 @@ const Booking = () => {
     });
   }, [searchParams]);
 
-  // When date or therapist changes, refetch slots
+  // When date, therapist or refreshKey changes, refetch slots
   useEffect(() => {
-    if (selectedDate && selectedServiceId) {
+    if (selectedDate && selectedServiceId && selectedTherapistId) {
       setLoadingSlots(true);
-      setSelectedTime(null); // Reset time when date changes
+      setSelectedTime(null);
       const dateStr = format(selectedDate, "yyyy-MM-dd");
       getAvailableSlots(dateStr, selectedServiceId, selectedTherapistId).then((slots) => {
         setTimeSlots(slots);
         setLoadingSlots(false);
       });
     }
+  }, [selectedDate, selectedServiceId, selectedTherapistId, slotsRefreshKey]);
+
+  // רענון אוטומטי כל 60 שניות כשמשתמש בוחר תאריך (כדי לראות שינויים של לקוחות אחרים)
+  useEffect(() => {
+    if (!selectedDate || !selectedServiceId || !selectedTherapistId) return;
+    const interval = setInterval(() => {
+      setSlotsRefreshKey((k) => k + 1);
+    }, 60_000);
+    return () => clearInterval(interval);
   }, [selectedDate, selectedServiceId, selectedTherapistId]);
 
   // Get the currently selected service and therapist objects for display
@@ -107,7 +117,7 @@ const Booking = () => {
   /**
    * Handles selecting a therapist — sets the therapist and advances to step 2
    */
-  const handleSelectTherapist = (therapistId: string | null) => {
+  const handleSelectTherapist = (therapistId: string) => {
     setSelectedTherapistId(therapistId);
     setCurrentStep(2);
   };
@@ -265,18 +275,6 @@ const Booking = () => {
                 תור ל: {selectedService?.name}
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                {/* אפשרות "לא משנה" */}
-                <button
-                  type="button"
-                  onClick={() => handleSelectTherapist(null)}
-                  className={cn(
-                    "rounded-lg border-2 p-4 text-start transition-all hover:border-primary",
-                    selectedTherapistId === null ? "border-primary bg-primary/5" : "border-border bg-card"
-                  )}
-                >
-                  <div className="font-semibold">לא משנה</div>
-                  <div className="text-sm text-muted-foreground mt-1">הראשונה הפנויה</div>
-                </button>
 
                 {eligibleTherapists.map((t) => (
                   <button
@@ -333,13 +331,29 @@ const Booking = () => {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <h2 className="mb-1 text-xl font-semibold">בחרו שעה</h2>
-              <p className="mb-4 text-sm text-muted-foreground">
-                {selectedService?.name}
-                {selectedService && ` (${selectedService.duration} דק')`}
-                {selectedTherapist ? ` · ${selectedTherapist.name}` : ""}
-                {" — "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })}
-              </p>
+              <div className="mb-4 flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="mb-1 text-xl font-semibold">בחרו שעה</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedService?.name}
+                    {selectedService && ` (${selectedService.duration} דק')`}
+                    {selectedTherapist ? ` · ${selectedTherapist.name}` : ""}
+                    {" — "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSlotsRefreshKey((k) => k + 1)}
+                  disabled={loadingSlots}
+                  className="shrink-0 text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mt-1 transition-colors"
+                  title="רענן שעות פנויות"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className={cn("h-4 w-4", loadingSlots && "animate-spin")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  רענן
+                </button>
+              </div>
               <TimeSlotPicker slots={timeSlots} selectedTime={selectedTime} onSelect={handleTimeSelect} isLoading={loadingSlots} />
             </motion.div>
           )}

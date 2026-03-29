@@ -40,6 +40,7 @@ export async function createAppointment(booking: BookingFormData & { serviceName
       notes: booking.notes ?? "",
       status: "pending",
       therapist_id: booking.therapistId ?? null,
+      therapist_name: (booking as BookingFormData & { therapistName?: string }).therapistName ?? null,
     }])
     .select()
     .single();
@@ -48,9 +49,24 @@ export async function createAppointment(booking: BookingFormData & { serviceName
   return mapRow(data);
 }
 
+// ── מחיקת תור לצמיתות ────────────────────────────────────────────────────
+export async function deleteAppointment(id: string): Promise<void> {
+  const { error } = await supabase.from("appointments").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ── עדכון סטטוס תור ──────────────────────────────────────────────────────
 export async function updateAppointmentStatus(id: string, status: Appointment["status"]): Promise<void> {
   const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+// ── שינוי שעה/תאריך לתור ─────────────────────────────────────────────────
+export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({ date, time })
+    .eq("id", id);
   if (error) throw error;
 }
 

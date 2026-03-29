@@ -35,6 +35,7 @@ import {
   EyeOff,
   KeyRound,
   UserCog,
+  CalendarCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,9 +63,12 @@ import {
   getAdminPassword,
   setAdminPassword,
   getTherapists,
+  rescheduleAppointment,
+  deleteAppointment,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
+import { AdminDailyCalendar } from "@/components/AdminDailyCalendar";
 import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile, Therapist } from "@/services/types";
 import { toast } from "sonner";
 
@@ -199,6 +203,12 @@ const Admin = ({ onLogout }: AdminProps) => {
     toast.success("התור בוטל");
   };
 
+  const handleDeleteAppointment = async (id: string) => {
+    await deleteAppointment(id);
+    setAppointments((prev) => prev.filter((a) => a.id !== id));
+    toast.success("התור נמחק לצמיתות");
+  };
+
   const handleConfirmAppointment = async (id: string) => {
     await confirmAppointment(id);
     setAppointments((prev) => prev.map((a) => (a.id === id ? { ...a, status: "confirmed" as const } : a)));
@@ -284,10 +294,14 @@ const Admin = ({ onLogout }: AdminProps) => {
         </div>
 
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 h-auto grid w-full grid-cols-3 grid-rows-2 sm:grid-rows-1 sm:grid-cols-6 gap-1 p-1">
+          <TabsList className="mb-6 h-auto grid w-full grid-cols-4 grid-rows-2 sm:grid-rows-1 sm:grid-cols-7 gap-1 p-1">
             <TabsTrigger value="appointments" className="gap-1 text-xs py-2">
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span>תורים</span>
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-1 text-xs py-2">
+              <CalendarCheck className="h-4 w-4 shrink-0" />
+              <span>יומן</span>
             </TabsTrigger>
             <TabsTrigger value="services" className="gap-1 text-xs py-2">
               <Sparkles className="h-4 w-4 shrink-0" />
@@ -313,70 +327,162 @@ const Admin = ({ onLogout }: AdminProps) => {
 
           {/* ===== TAB: APPOINTMENTS ===== */}
           <TabsContent value="appointments">
-            <div className="space-y-3">
-              {appointments.filter((a) => a.status !== "cancelled").length === 0 ? (
-                <p className="py-12 text-center text-muted-foreground">אין תורים קרובים</p>
-              ) : (
-                appointments.filter((a) => a.status !== "cancelled").map((apt, i) => (
-                  <motion.div
-                    key={apt.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="font-semibold text-foreground">{apt.serviceName}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", appointmentStatusBadgeClass(apt.status))}>
-                          {appointmentStatusLabel(apt.status)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {apt.date} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
-                      </p>
-                      {apt.notes && <p className="mt-1 text-xs text-muted-foreground italic">הערה: {apt.notes}</p>}
-                      {apt.lateMinutes != null && (
-                        <p className="mt-1 text-xs text-amber-600 font-medium">⏱ איחר {apt.lateMinutes} דקות</p>
-                      )}
-                      {lateEditId === apt.id && (
-                        <div className="mt-2 flex items-center gap-2" dir="ltr">
-                          <Input type="number" min={0} max={120} placeholder="0" value={lateEditValue}
-                            onChange={(e) => setLateEditValue(e.target.value)} className="w-24 h-8 text-sm" />
-                          <span className="text-xs text-muted-foreground" dir="rtl">דקות איחור</span>
-                          <Button size="sm" variant="hero" className="h-8 text-xs" onClick={() => handleSaveLateMinutes(apt.id)}>שמור</Button>
-                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setLateEditId(null)}>ביטול</Button>
+            {(() => {
+              const today = format(new Date(), "yyyy-MM-dd");
+              // רק תורים עתידיים, ממוינים לפי תאריך כניסה (createdAt)
+              const future = appointments
+                .filter((a) => a.date >= today)
+                .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+              const activeApts   = future.filter((a) => a.status !== "cancelled");
+              const cancelledApts = future.filter((a) => a.status === "cancelled");
+
+              return (
+                <div className="space-y-3">
+                  {/* תורים פעילים */}
+                  {activeApts.length === 0 && (
+                    <p className="py-8 text-center text-muted-foreground">אין תורים עתידיים פעילים</p>
+                  )}
+                  {activeApts.map((apt, i) => (
+                    <motion.div
+                      key={apt.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="font-semibold text-foreground">{apt.serviceName}</span>
+                          <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", appointmentStatusBadgeClass(apt.status))}>
+                            {appointmentStatusLabel(apt.status)}
+                          </span>
                         </div>
-                      )}
+                        <p className="text-sm text-muted-foreground">
+                          {apt.date} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
+                          {apt.therapistName && ` · ${apt.therapistName}`}
+                        </p>
+                        {apt.notes && <p className="mt-1 text-xs text-muted-foreground italic">הערה: {apt.notes}</p>}
+                        {apt.lateMinutes != null && (
+                          <p className="mt-1 text-xs text-amber-600 font-medium">⏱ איחר {apt.lateMinutes} דקות</p>
+                        )}
+                        {lateEditId === apt.id && (
+                          <div className="mt-2 flex items-center gap-2" dir="ltr">
+                            <Input type="number" min={0} max={120} placeholder="0" value={lateEditValue}
+                              onChange={(e) => setLateEditValue(e.target.value)} className="w-24 h-8 text-sm" />
+                            <span className="text-xs text-muted-foreground" dir="rtl">דקות איחור</span>
+                            <Button size="sm" variant="hero" className="h-8 text-xs" onClick={() => handleSaveLateMinutes(apt.id)}>שמור</Button>
+                            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setLateEditId(null)}>ביטול</Button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                        {apt.status === "pending" && (
+                          <Button variant="hero" size="sm" onClick={() => handleConfirmAppointment(apt.id)} className="gap-1">
+                            <Check className="h-3.5 w-3.5" />אשר
+                          </Button>
+                        )}
+                        {(apt.status === "pending" || apt.status === "confirmed") && (
+                          <Button variant="outline" size="sm" onClick={() => setRescheduleApt(apt)}
+                            className="gap-1 text-blue-600 border-blue-200 hover:text-blue-700">
+                            <Clock className="h-3.5 w-3.5" />הזז
+                          </Button>
+                        )}
+                        {(apt.status === "pending" || apt.status === "confirmed") && (
+                          <Button variant="outline" size="sm" onClick={() => handleCancelAppointment(apt.id)}
+                            className="gap-1 text-destructive hover:text-destructive">
+                            בטל<X className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {(apt.status === "confirmed" || apt.status === "completed") && (
+                          <Button variant="outline" size="sm"
+                            onClick={() => { setLateEditId(apt.id); setLateEditValue(apt.lateMinutes != null ? String(apt.lateMinutes) : ""); }}
+                            className="gap-1 text-amber-600 border-amber-300 hover:text-amber-700">
+                            <Timer className="h-3.5 w-3.5" />איחור
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteAppointment(apt.id)}
+                          className="gap-1 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ))}
+
+                  {/* תורים מבוטלים (עתידיים) */}
+                  {cancelledApts.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                        <X className="h-4 w-4" />
+                        תורים מבוטלים ({cancelledApts.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {cancelledApts.map((apt, i) => (
+                          <motion.div
+                            key={apt.id}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03 }}
+                            className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="flex-1">
+                              <div className="mb-0.5 flex items-center gap-2">
+                                <span className="font-medium text-muted-foreground text-sm">{apt.serviceName}</span>
+                                <span className="rounded-full bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-medium">בוטל</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {apt.date} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
+                                {apt.therapistName && ` · ${apt.therapistName}`}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                              <Button variant="outline" size="sm"
+                                onClick={async () => {
+                                  await confirmAppointment(apt.id);
+                                  setAppointments((prev) => prev.map((a) => a.id === apt.id ? { ...a, status: "confirmed" as const } : a));
+                                  toast.success("התור הוחזר ואושר");
+                                }}
+                                className="gap-1 text-green-600 border-green-200 hover:text-green-700 text-xs">
+                                <Check className="h-3 w-3" />החזר
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => setRescheduleApt(apt)}
+                                className="gap-1 text-blue-600 border-blue-200 hover:text-blue-700 text-xs">
+                                <Clock className="h-3 w-3" />הזז
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleDeleteAppointment(apt.id)}
+                                className="text-muted-foreground hover:text-destructive">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-                      {apt.status === "pending" && (
-                        <Button variant="hero" size="sm" onClick={() => handleConfirmAppointment(apt.id)} className="gap-1">
-                          <Check className="h-3.5 w-3.5" />אשר תור
-                        </Button>
-                      )}
-                      {(apt.status === "pending" || apt.status === "confirmed") && (
-                        <Button variant="outline" size="sm" onClick={() => handleCancelAppointment(apt.id)} className="gap-1 text-destructive hover:text-destructive">
-                          ביטול<X className="h-3 w-3" />
-                        </Button>
-                      )}
-                      {(apt.status === "confirmed" || apt.status === "completed") && (
-                        <Button variant="outline" size="sm"
-                          onClick={() => { setLateEditId(apt.id); setLateEditValue(apt.lateMinutes != null ? String(apt.lateMinutes) : ""); }}
-                          className="gap-1 text-amber-600 border-amber-300 hover:text-amber-700">
-                          <Timer className="h-3.5 w-3.5" />איחור
-                        </Button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))
-              )}
-            </div>
+                  )}
+                </div>
+              );
+            })()}
           </TabsContent>
 
           {/* ===== TAB: SERVICES ===== */}
           <TabsContent value="services">
             <AdminServicesTab services={services} setServices={setServices} />
+          </TabsContent>
+
+          {/* ===== TAB: DAILY CALENDAR ===== */}
+          <TabsContent value="calendar">
+            {therapists.length === 0 ? (
+              <p className="py-12 text-center text-muted-foreground">הוסיפי מטפלת כדי לצפות ביומן</p>
+            ) : (
+              <AdminDailyCalendar
+                appointments={appointments}
+                therapists={therapists}
+                services={services}
+                schedule={schedule}
+                onAppointmentUpdated={(updated) =>
+                  setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+                }
+              />
+            )}
           </TabsContent>
 
           {/* ===== TAB: THERAPISTS ===== */}
