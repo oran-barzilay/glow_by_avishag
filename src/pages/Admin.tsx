@@ -284,30 +284,30 @@ const Admin = ({ onLogout }: AdminProps) => {
         </div>
 
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 grid w-full grid-cols-3 sm:grid-cols-6 gap-1">
-            <TabsTrigger value="appointments" className="gap-1 text-xs sm:text-sm">
+          <TabsList className="mb-6 h-auto grid w-full grid-cols-3 grid-rows-2 sm:grid-rows-1 sm:grid-cols-6 gap-1 p-1">
+            <TabsTrigger value="appointments" className="gap-1 text-xs py-2">
               <CalendarDays className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">תורים</span>
+              <span>תורים</span>
             </TabsTrigger>
-            <TabsTrigger value="services" className="gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="services" className="gap-1 text-xs py-2">
               <Sparkles className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">שירותים</span>
+              <span>שירותים</span>
             </TabsTrigger>
-            <TabsTrigger value="therapists" className="gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="therapists" className="gap-1 text-xs py-2">
               <UserCog className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">מטפלות</span>
+              <span>מטפלות</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="schedule" className="gap-1 text-xs py-2">
               <Clock className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">שעות פעילות</span>
+              <span>שעות</span>
             </TabsTrigger>
-            <TabsTrigger value="clients" className="gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="clients" className="gap-1 text-xs py-2">
               <Users className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">לקוחות</span>
+              <span>לקוחות</span>
             </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-1 text-xs sm:text-sm">
+            <TabsTrigger value="settings" className="gap-1 text-xs py-2">
               <Settings className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">הגדרות</span>
+              <span>הגדרות</span>
             </TabsTrigger>
           </TabsList>
 
