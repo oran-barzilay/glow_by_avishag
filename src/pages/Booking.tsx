@@ -19,6 +19,7 @@ import { ServiceCard } from "@/components/ServiceCard";
 import { TimeSlotPicker } from "@/components/TimeSlotPicker";
 import { BookingForm } from "@/components/BookingForm";
 import { getServices, getAvailableSlots, createBooking, getTherapists } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 import { Service, TimeSlot, Therapist } from "@/services/types";
 import { toast } from "sonner";
 
@@ -55,8 +56,14 @@ const Booking = () => {
 
   // הגבלת מספר ימים קדימה לפי הגדרת האדמין
   const maxAdvanceDays = parseInt(localStorage.getItem("maxAdvanceDays") ?? "30");
-  const maxBookingDate = new Date();
+
+  // Normalize range so "today" stays selectable all day long
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const maxBookingDate = new Date(todayStart);
   maxBookingDate.setDate(maxBookingDate.getDate() + maxAdvanceDays);
+  maxBookingDate.setHours(23, 59, 59, 999);
 
   // Load services and therapists on mount
   useEffect(() => {
@@ -85,13 +92,37 @@ const Booking = () => {
     }
   }, [selectedDate, selectedServiceId, selectedTherapistId, slotsRefreshKey]);
 
-  // רענון אוטומטי כל 60 שניות כשמשתמש בוחר תאריך (כדי לראות שינויים של לקוחות אחרים)
+  // רענון אוטומטי מהיר בזמן בחירת שעה + realtime אם Supabase פעיל
   useEffect(() => {
     if (!selectedDate || !selectedServiceId || !selectedTherapistId) return;
+
+    // Poll fallback כל 15 שניות
     const interval = setInterval(() => {
       setSlotsRefreshKey((k) => k + 1);
-    }, 60_000);
-    return () => clearInterval(interval);
+    }, 15_000);
+
+    // Realtime: כל שינוי בטבלת appointments ביום/מטפלת הנבחרים מרענן סלוטים
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+    const channel = supabase
+      .channel(`slots-${dateStr}-${selectedTherapistId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "appointments",
+          filter: `date=eq.${dateStr}`,
+        },
+        () => {
+          setSlotsRefreshKey((k) => k + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [selectedDate, selectedServiceId, selectedTherapistId]);
 
   // Get the currently selected service and therapist objects for display
@@ -314,7 +345,7 @@ const Booking = () => {
                   mode="single"
                   selected={selectedDate}
                   onSelect={handleDateSelect}
-                  disabled={(date) => date < new Date() || date > maxBookingDate}
+                  disabled={(date) => date < todayStart || date > maxBookingDate}
                   locale={he}
                   className="rounded-lg border border-border bg-card p-3 shadow-card pointer-events-auto"
                 />

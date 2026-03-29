@@ -33,12 +33,15 @@ function timeToY(time: string): number {
 }
 
 function yToTime(y: number): string {
+  const SNAP_MINUTES = 5;
   const totalMins = Math.round((y / HOUR_HEIGHT) * 60);
   const h = Math.floor(totalMins / 60) + START_HOUR;
   const m = totalMins % 60;
-  const rounded = Math.round(m / 30) * 30;
-  const finalH = rounded === 60 ? h + 1 : h;
-  const finalM = rounded === 60 ? 0 : rounded;
+
+  const snappedMins = Math.round(m / SNAP_MINUTES) * SNAP_MINUTES;
+  const finalH = snappedMins >= 60 ? h + 1 : h;
+  const finalM = snappedMins >= 60 ? 0 : snappedMins;
+
   return `${String(finalH).padStart(2, "0")}:${String(finalM).padStart(2, "0")}`;
 }
 
@@ -179,8 +182,6 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
   }, [therapists, selectedTherapistId]);
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
-  const activeTherapists = therapists.filter((t) => t.isActive);
-  const singleTherapist = activeTherapists.length === 1;
 
   // פילטר תורים:
   // - מציג תורים שה-therapistId שלהם תואם OR (מטפלת יחידה ואין therapistId בתור = תורים ישנים)

@@ -88,15 +88,41 @@ export async function getAvailableSlots(
   let daySchedule = mockWeeklySchedule.find((d) => d.dayOfWeek === dayOfWeek);
   if (useSupabase) {
     const { supabase } = await import("@/lib/supabase");
-    const { data } = await supabase.from("working_hours").select("*").eq("day_of_week", dayOfWeek).maybeSingle();
+    const { data } = await supabase
+      .from("working_hours")
+      .select("*")
+      .eq("day_of_week", dayOfWeek)
+      .maybeSingle();
     if (data) {
-      daySchedule = { dayOfWeek: data.day_of_week, dayName: data.day_name ?? "", isWorkingDay: data.is_working_day, startTime: data.start_time, endTime: data.end_time };
+      daySchedule = {
+        dayOfWeek: data.day_of_week,
+        dayName: data.day_name ?? "",
+        isWorkingDay: data.is_working_day,
+        startTime: data.start_time,
+        endTime: data.end_time,
+      };
     }
   }
   if (!daySchedule || !daySchedule.isWorkingDay) return [];
 
   // תאריכים חסומים
-  const blocked = mockBlockedDates.find((b) => b.date === date);
+  let blocked = mockBlockedDates.find((b) => b.date === date);
+  if (useSupabase) {
+    const { supabase } = await import("@/lib/supabase");
+    const { data } = await supabase
+      .from("blocked_dates")
+      .select("*")
+      .eq("date", date)
+      .maybeSingle();
+    if (data) {
+      blocked = {
+        id: data.id,
+        date: data.date,
+        blockedHours: data.blocked_hours ?? null,
+        reason: data.reason ?? "",
+      };
+    }
+  }
   if (blocked && blocked.blockedHours === null) return [];
 
   // שירות
@@ -104,7 +130,8 @@ export async function getAvailableSlots(
   const service = allServices.find((s) => s.id === serviceId);
   const duration = service?.duration ?? 30;
   const breakMins = service?.breakMinutes ?? 0;
-  const totalBlock = duration + breakMins; // כמה זמן חוסם כל תור
+  const quantum = Math.max(5, duration + breakMins);
+  const totalBlock = duration + breakMins;
 
   // תורים קיימים של המטפלת בתאריך הזה
   let bookedSlots: Array<{ time: string; totalBlock: number }> = [];
@@ -120,45 +147,87 @@ export async function getAvailableSlots(
     if (data) {
       bookedSlots = data.map((r) => {
         const svc = allServices.find((s) => s.id === r.service_id);
-        return { time: r.time, totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0) };
+        return {
+          time: r.time,
+          totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0),
+        };
       });
     }
   } else {
     bookedSlots = mockAppointments
-      .filter((a) => a.date === date && a.status !== "cancelled" && (!therapistId || a.therapistId === therapistId))
+      .filter(
+        (a) =>
+          a.date === date &&
+          a.status !== "cancelled" &&
+          (!therapistId || a.therapistId === therapistId)
+      )
       .map((a) => {
         const svc = mockServices.find((s) => s.id === a.serviceId);
-        return { time: a.time, totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0) };
+        return {
+          time: a.time,
+          totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0),
+        };
       });
   }
 
-  // המר תורים תפוסים לטווחי דקות
-  const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  const bookedRanges = bookedSlots.map((b) => ({ start: toMins(b.time), end: toMins(b.time) + b.totalBlock }));
+  const toMins = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const toTime = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+  };
 
-  // צור חלונות זמן
   const [startH, startM] = daySchedule.startTime.split(":").map(Number);
   const [endH, endM] = daySchedule.endTime.split(":").map(Number);
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
+  const workStart = startH * 60 + startM;
+  const workEnd = endH * 60 + endM;
 
-  const slots: TimeSlot[] = [];
-  // קפיצות לפי totalBlock (משך + הפסקה) - הצעת שעות הגיוניות
-  const stepSize = Math.max(30, totalBlock); // לפחות 30 דק' בין התחלות
+  const bookedRanges = bookedSlots
+    .map((b) => ({ start: toMins(b.time), end: toMins(b.time) + b.totalBlock }))
+    .sort((a, b) => a.start - b.start);
 
-  for (let mins = startMinutes; mins + duration <= endMinutes; mins += 30) {
-    const hours = Math.floor(mins / 60);
-    const minutes = mins % 60;
-    const timeStr = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+  // חלונות פנויים בתוך שעות העבודה
+  const freeWindows: Array<{ start: number; end: number }> = [];
+  let cursor = workStart;
+  for (const r of bookedRanges) {
+    if (r.start > cursor) {
+      freeWindows.push({ start: cursor, end: Math.min(r.start, workEnd) });
+    }
+    cursor = Math.max(cursor, r.end);
+  }
+  if (cursor < workEnd) freeWindows.push({ start: cursor, end: workEnd });
 
+  // מועמדים חכמים: בתחילת כל חלון ואז בקוונטות של אורך הטיפול+הפסקה
+  const candidateStarts = new Set<number>();
+  for (const w of freeWindows) {
+    // אפשר להתחיל מיד בתחילת החלון
+    if (w.start + duration <= w.end) candidateStarts.add(w.start);
+
+    // ואז רק בקוונטות כדי לא ליצור "שברי זמן" מיותרים
+    for (let s = w.start + quantum; s + duration <= w.end; s += quantum) {
+      candidateStarts.add(s);
+    }
+  }
+
+  // בנוסף: סוף תור קיים הוא נקודת התחלה חשובה למילוי מיטבי
+  for (const r of bookedRanges) {
+    if (r.end >= workStart && r.end + duration <= workEnd) candidateStarts.add(r.end);
+  }
+
+  const sortedStarts = [...candidateStarts]
+    .sort((a, b) => a - b)
+    .filter((mins) => mins >= workStart && mins + duration <= workEnd);
+
+  const slots: TimeSlot[] = sortedStarts.map((mins) => {
+    const timeStr = toTime(mins);
     const isBlockedHour = blocked?.blockedHours?.includes(timeStr) ?? false;
-
-    // בדוק אם הטווח [mins, mins+totalBlock) מתנגש עם תור קיים
     const slotEnd = mins + totalBlock;
     const hasConflict = bookedRanges.some((r) => mins < r.end && slotEnd > r.start);
-
-    slots.push({ time: timeStr, available: !isBlockedHour && !hasConflict });
-  }
+    return { time: timeStr, available: !isBlockedHour && !hasConflict };
+  });
 
   return slots;
 }
