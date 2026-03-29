@@ -30,6 +30,7 @@ const defaultDraft = (): CreateServiceInput => ({
   price: 0,
   icon: "Sparkles",
   color: "service-nails",
+  breakMinutes: 0,
 });
 
 export function AdminServicesTab({ services, setServices }: AdminServicesTabProps) {
@@ -150,6 +151,23 @@ export function AdminServicesTab({ services, setServices }: AdminServicesTabProp
                 />
               </div>
               <div>
+                <Label htmlFor={`break-${service.id}`}>הפסקה אחרי טיפול (דקות)</Label>
+                <Input
+                  id={`break-${service.id}`}
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={service.breakMinutes ?? 0}
+                  onChange={(e) =>
+                    patchService(service.id, {
+                      breakMinutes: Number.parseInt(e.target.value, 10) || 0,
+                    })
+                  }
+                  className="mt-1.5"
+                  dir="ltr"
+                />
+              </div>
+              <div>
                 <Label htmlFor={`price-${service.id}`}>מחיר (₪)</Label>
                 <Input
                   id={`price-${service.id}`}
@@ -253,6 +271,24 @@ export function AdminServicesTab({ services, setServices }: AdminServicesTabProp
                   setDraft((d) => ({
                     ...d,
                     duration: Number.parseInt(e.target.value, 10) || 0,
+                  }))
+                }
+                className="mt-1.5"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <Label htmlFor="new-break">הפסקה אחרי טיפול (דקות)</Label>
+              <Input
+                id="new-break"
+                type="number"
+                min={0}
+                max={120}
+                value={draft.breakMinutes ?? 0}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    breakMinutes: Number.parseInt(e.target.value, 10) || 0,
                   }))
                 }
                 className="mt-1.5"

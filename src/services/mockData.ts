@@ -16,6 +16,7 @@ export const mockServices: Service[] = [
     price: 45,
     icon: "Sparkles",
     color: "service-nails",
+    breakMinutes: 10,
   },
   {
     id: "eyebrows",
@@ -25,6 +26,7 @@ export const mockServices: Service[] = [
     price: 35,
     icon: "Eye",
     color: "service-brows",
+    breakMinutes: 5,
   },
   {
     id: "spray-tan",
@@ -34,6 +36,7 @@ export const mockServices: Service[] = [
     price: 55,
     icon: "Sun",
     color: "service-tan",
+    breakMinutes: 10,
   },
 ];
 

@@ -5,6 +5,15 @@
  * the API response shapes from your FastAPI endpoints.
  */
 
+/** קוסמטיקאית / מטפלת */
+export interface Therapist {
+  id: string;
+  name: string;
+  isActive: boolean;
+  /** שירותים שהיא מסוגלת לתת (מערך של serviceId) */
+  serviceIds: string[];
+}
+
 /** Represents a service offered by the salon */
 export interface Service {
   id: string;
@@ -14,6 +23,7 @@ export interface Service {
   price: number;       // Price in your currency
   icon: string;        // Lucide icon name for display
   color: string;       // Tailwind color class for theming
+  breakMinutes: number; // הפסקה אחרי הטיפול (דקות)
 }
 
 /** Represents a single time slot available for booking */
@@ -35,6 +45,8 @@ export interface Appointment {
   status: "pending" | "confirmed" | "cancelled" | "completed";
   createdAt: string;   // ISO datetime string
   lateMinutes?: number | null;  // כמה דקות איחר הלקוח (null = לא הוזן)
+  therapistId?: string | null;
+  therapistName?: string | null;
 }
 
 /** פרופיל לקוח עם סטטיסטיקות */
@@ -74,4 +86,5 @@ export interface BookingFormData {
   clientName: string;
   clientPhone: string;
   notes: string;
+  therapistId?: string | null;
 }

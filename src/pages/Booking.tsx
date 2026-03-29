@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, CalendarDays, Clock, User } from "lucide-react";
+import { ArrowRight, Check, CalendarDays, Clock, User, UserCheck } from "lucide-react";
 import { format } from "date-fns";
 import { he } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,8 @@ import { cn } from "@/lib/utils";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TimeSlotPicker } from "@/components/TimeSlotPicker";
 import { BookingForm } from "@/components/BookingForm";
-import { getServices, getAvailableSlots, createBooking } from "@/services/api";
-import { Service, TimeSlot } from "@/services/types";
+import { getServices, getAvailableSlots, createBooking, getTherapists } from "@/services/api";
+import { Service, TimeSlot, Therapist } from "@/services/types";
 import { toast } from "sonner";
 
 /**
@@ -28,6 +28,7 @@ import { toast } from "sonner";
  */
 const STEPS = [
   { label: "שירות", icon: Check },
+  { label: "מטפלת", icon: UserCheck },
   { label: "תאריך", icon: CalendarDays },
   { label: "שעה", icon: Clock },
   { label: "פרטים", icon: User },
@@ -40,8 +41,10 @@ const Booking = () => {
 
   // ===== STATE MANAGEMENT =====
   const [services, setServices] = useState<Service[]>([]);
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
@@ -54,57 +57,75 @@ const Booking = () => {
   const maxBookingDate = new Date();
   maxBookingDate.setDate(maxBookingDate.getDate() + maxAdvanceDays);
 
-  // Load services on mount
+  // Load services and therapists on mount
   useEffect(() => {
-    getServices().then((data) => {
-      setServices(data);
+    Promise.all([getServices(), getTherapists()]).then(([svcData, therapistData]) => {
+      setServices(svcData);
+      setTherapists(therapistData.filter((t) => t.isActive));
       // If a service was passed via URL, pre-select it and go to step 1
       const preSelected = searchParams.get("service");
-      if (preSelected && data.find((s) => s.id === preSelected)) {
+      if (preSelected && svcData.find((s) => s.id === preSelected)) {
         setSelectedServiceId(preSelected);
         setCurrentStep(1);
       }
     });
   }, [searchParams]);
 
-  // When the selected date changes, fetch available time slots
+  // When date or therapist changes, refetch slots
   useEffect(() => {
     if (selectedDate && selectedServiceId) {
       setLoadingSlots(true);
       setSelectedTime(null); // Reset time when date changes
       const dateStr = format(selectedDate, "yyyy-MM-dd");
-      getAvailableSlots(dateStr, selectedServiceId).then((slots) => {
+      getAvailableSlots(dateStr, selectedServiceId, selectedTherapistId).then((slots) => {
         setTimeSlots(slots);
         setLoadingSlots(false);
       });
     }
-  }, [selectedDate, selectedServiceId]);
+  }, [selectedDate, selectedServiceId, selectedTherapistId]);
 
-  // Get the currently selected service object for display
+  // Get the currently selected service and therapist objects for display
   const selectedService = services.find((s) => s.id === selectedServiceId);
+  const selectedTherapist = therapists.find((t) => t.id === selectedTherapistId);
+
+  // מטפלות שמסוגלות לטפל בשירות הנבחר
+  const eligibleTherapists = therapists.filter(
+    (t) => !selectedServiceId || t.serviceIds.includes(selectedServiceId)
+  );
 
   /**
    * Handles selecting a service — sets the service and advances to step 1
    */
   const handleSelectService = (serviceId: string) => {
     setSelectedServiceId(serviceId);
+    setSelectedTherapistId(null);
+    setSelectedDate(undefined);
+    setSelectedTime(null);
     setCurrentStep(1);
   };
 
   /**
-   * Handles selecting a date — advances to step 2 (time selection)
+   * Handles selecting a therapist — sets the therapist and advances to step 2
    */
-  const handleDateSelect = (date: Date | undefined) => {
-    setSelectedDate(date);
-    if (date) setCurrentStep(2);
+  const handleSelectTherapist = (therapistId: string | null) => {
+    setSelectedTherapistId(therapistId);
+    setCurrentStep(2);
   };
 
   /**
-   * Handles selecting a time slot — advances to step 3 (contact form)
+   * Handles selecting a date — advances to step 3 (time selection)
+   */
+  const handleDateSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    if (date) setCurrentStep(3);
+  };
+
+  /**
+   * Handles selecting a time slot — advances to step 4 (contact form)
    */
   const handleTimeSelect = (time: string) => {
     setSelectedTime(time);
-    setCurrentStep(3);
+    setCurrentStep(4);
   };
 
   /**
@@ -122,6 +143,7 @@ const Booking = () => {
         clientName: data.clientName,
         clientPhone: data.clientPhone,
         notes: data.notes || "",
+        therapistId: selectedTherapistId,
       });
 
       setBookingComplete(true);
@@ -154,14 +176,12 @@ const Booking = () => {
           </div>
           <h2 className="mb-2 text-2xl font-bold">הבקשה נשלחה בהצלחה</h2>
           <p className="mb-2 text-muted-foreground">
-            {selectedService?.name} · {selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })} בשעה {selectedTime}
+            {selectedService?.name}
+            {selectedTherapist && ` · ${selectedTherapist.name}`}
+            {" · "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })} בשעה {selectedTime}
           </p>
-          <p className="mb-8 text-sm text-muted-foreground">
-            נעדכן אתכם לאחר אישור התור. תודה על הסבלנות!
-          </p>
-          <Button variant="hero" onClick={() => navigate("/")}>
-            חזרה לדף הבית
-          </Button>
+          <p className="mb-8 text-sm text-muted-foreground">נעדכן אתכם לאחר אישור התור. תודה על הסבלנות!</p>
+          <Button variant="hero" onClick={() => navigate("/")}>חזרה לדף הבית</Button>
         </motion.div>
       </div>
     );
@@ -173,9 +193,7 @@ const Booking = () => {
         {/* Page heading */}
         <div className="mb-8 text-center">
           <h1 className="mb-2 text-3xl font-bold">הזמינו תור</h1>
-          <p className="text-muted-foreground">
-            עקבו אחרי השלבים להשלמת ההזמנה
-          </p>
+          <p className="text-muted-foreground">עקבו אחרי השלבים להשלמת ההזמנה</p>
         </div>
 
         {/* ===== STEP PROGRESS BAR ===== */}
@@ -183,10 +201,7 @@ const Booking = () => {
           {STEPS.map((step, i) => (
             <div key={step.label} className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  // Only allow going back to completed steps
-                  if (i < currentStep) setCurrentStep(i);
-                }}
+                onClick={() => { if (i < currentStep) setCurrentStep(i); }}
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium transition-all",
                   i < currentStep && "bg-primary text-primary-foreground cursor-pointer",
@@ -198,12 +213,7 @@ const Booking = () => {
               </button>
               {/* Connector line between steps */}
               {i < STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    "h-0.5 w-8 sm:w-12 transition-colors",
-                    i < currentStep ? "bg-primary" : "bg-muted"
-                  )}
-                />
+                <div className={cn("h-0.5 w-6 sm:w-10 transition-colors", i < currentStep ? "bg-primary" : "bg-muted")} />
               )}
             </div>
           ))}
@@ -211,14 +221,8 @@ const Booking = () => {
 
         {/* Back button (visible after step 0) */}
         {currentStep > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goBack}
-            className="mb-4 gap-1"
-          >
-            <ArrowRight className="h-4 w-4" />
-            חזרה
+          <Button variant="ghost" size="sm" onClick={goBack} className="mb-4 gap-1">
+            <ArrowRight className="h-4 w-4" />חזרה
           </Button>
         )}
 
@@ -247,7 +251,7 @@ const Booking = () => {
             </motion.div>
           )}
 
-          {/* STEP 1: Pick a date */}
+          {/* STEP 1: Select a therapist */}
           {currentStep === 1 && (
             <motion.div
               key="step-1"
@@ -256,9 +260,56 @@ const Booking = () => {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <h2 className="mb-1 text-xl font-semibold">בחרו תאריך</h2>
+              <h2 className="mb-1 text-xl font-semibold">בחרו מטפלת</h2>
               <p className="mb-4 text-sm text-muted-foreground">
                 תור ל: {selectedService?.name}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {/* אפשרות "לא משנה" */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectTherapist(null)}
+                  className={cn(
+                    "rounded-lg border-2 p-4 text-start transition-all hover:border-primary",
+                    selectedTherapistId === null ? "border-primary bg-primary/5" : "border-border bg-card"
+                  )}
+                >
+                  <div className="font-semibold">לא משנה</div>
+                  <div className="text-sm text-muted-foreground mt-1">הראשונה הפנויה</div>
+                </button>
+
+                {eligibleTherapists.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => handleSelectTherapist(t.id)}
+                    className={cn(
+                      "rounded-lg border-2 p-4 text-start transition-all hover:border-primary",
+                      selectedTherapistId === t.id ? "border-primary bg-primary/5" : "border-border bg-card"
+                    )}
+                  >
+                    <div className="font-semibold">{t.name}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {t.serviceIds.length} שירותים
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 2: Pick a date */}
+          {currentStep === 2 && (
+            <motion.div
+              key="step-2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <h2 className="mb-1 text-xl font-semibold">בחרו תאריך</h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                {selectedService?.name}{selectedTherapist ? ` · ${selectedTherapist.name}` : ""}
               </p>
               <div className="flex justify-center">
                 <Calendar
@@ -273,10 +324,10 @@ const Booking = () => {
             </motion.div>
           )}
 
-          {/* STEP 2: Select a time slot */}
-          {currentStep === 2 && (
+          {/* STEP 3: Select a time slot */}
+          {currentStep === 3 && (
             <motion.div
-              key="step-2"
+              key="step-3"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -284,21 +335,19 @@ const Booking = () => {
             >
               <h2 className="mb-1 text-xl font-semibold">בחרו שעה</h2>
               <p className="mb-4 text-sm text-muted-foreground">
-                {selectedService?.name} — {selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })}
+                {selectedService?.name}
+                {selectedService && ` (${selectedService.duration} דק')`}
+                {selectedTherapist ? ` · ${selectedTherapist.name}` : ""}
+                {" — "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })}
               </p>
-              <TimeSlotPicker
-                slots={timeSlots}
-                selectedTime={selectedTime}
-                onSelect={handleTimeSelect}
-                isLoading={loadingSlots}
-              />
+              <TimeSlotPicker slots={timeSlots} selectedTime={selectedTime} onSelect={handleTimeSelect} isLoading={loadingSlots} />
             </motion.div>
           )}
 
-          {/* STEP 3: Contact form */}
-          {currentStep === 3 && (
+          {/* STEP 4: Contact form */}
+          {currentStep === 4 && (
             <motion.div
-              key="step-3"
+              key="step-4"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -307,13 +356,12 @@ const Booking = () => {
             >
               <h2 className="mb-1 text-xl font-semibold">הפרטים שלכם</h2>
               <p className="mb-4 text-sm text-muted-foreground">
-                {selectedService?.name} — {selectedDate && format(selectedDate, "EEE, d MMM", { locale: he })} בשעה {selectedTime}
+                {selectedService?.name}
+                {selectedTherapist ? ` · ${selectedTherapist.name}` : ""}
+                {" — "}{selectedDate && format(selectedDate, "EEE, d MMM", { locale: he })} בשעה {selectedTime}
               </p>
               <div className="rounded-lg border border-border bg-card p-6 shadow-card">
-                <BookingForm
-                  onSubmit={handleFormSubmit}
-                  isSubmitting={isSubmitting}
-                />
+                <BookingForm onSubmit={handleFormSubmit} isSubmitting={isSubmitting} />
               </div>
             </motion.div>
           )}

@@ -34,6 +34,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,9 +61,11 @@ import {
   getClientProfiles,
   getAdminPassword,
   setAdminPassword,
+  getTherapists,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
-import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile } from "@/services/types";
+import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
+import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile, Therapist } from "@/services/types";
 import { toast } from "sonner";
 
 const appointmentStatusLabel = (status: string) => {
@@ -94,6 +97,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [clientProfiles, setClientProfiles] = useState<ClientProfile[]>([]);
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Collapse state for schedule sections
@@ -142,12 +146,14 @@ const Admin = ({ onLogout }: AdminProps) => {
       getBlockedDates(),
       getServices(),
       getClientProfiles(),
-    ]).then(([apts, sched, blocks, svc, profiles]) => {
+      getTherapists(),
+    ]).then(([apts, sched, blocks, svc, profiles, therapistList]) => {
       setAppointments(apts);
       setSchedule(sched);
       setBlockedDates(blocks);
       setServices([...svc]);
       setClientProfiles(profiles);
+      setTherapists(therapistList);
       setLoading(false);
     });
   }, []);
@@ -278,7 +284,7 @@ const Admin = ({ onLogout }: AdminProps) => {
         </div>
 
         <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 grid w-full grid-cols-3 sm:grid-cols-5 gap-1">
+          <TabsList className="mb-6 grid w-full grid-cols-3 sm:grid-cols-6 gap-1">
             <TabsTrigger value="appointments" className="gap-1 text-xs sm:text-sm">
               <CalendarDays className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">תורים</span>
@@ -286,6 +292,10 @@ const Admin = ({ onLogout }: AdminProps) => {
             <TabsTrigger value="services" className="gap-1 text-xs sm:text-sm">
               <Sparkles className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">שירותים</span>
+            </TabsTrigger>
+            <TabsTrigger value="therapists" className="gap-1 text-xs sm:text-sm">
+              <UserCog className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">מטפלות</span>
             </TabsTrigger>
             <TabsTrigger value="schedule" className="gap-1 text-xs sm:text-sm">
               <Clock className="h-4 w-4 shrink-0" />
@@ -367,6 +377,15 @@ const Admin = ({ onLogout }: AdminProps) => {
           {/* ===== TAB: SERVICES ===== */}
           <TabsContent value="services">
             <AdminServicesTab services={services} setServices={setServices} />
+          </TabsContent>
+
+          {/* ===== TAB: THERAPISTS ===== */}
+          <TabsContent value="therapists">
+            <AdminTherapistsTab
+              therapists={therapists}
+              setTherapists={setTherapists}
+              services={services}
+            />
           </TabsContent>
 
           {/* ===== TAB: SCHEDULE + BLOCKED (merged, collapsible) ===== */}

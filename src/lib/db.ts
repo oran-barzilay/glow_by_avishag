@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { Appointment, BookingFormData, ClientProfile } from "@/services/types";
+import type { Appointment, BookingFormData, ClientProfile, Therapist } from "@/services/types";
 
 // ── שליפת כל התורים (לממשק ניהול) ──────────────────────────────────────
 export async function getAllAppointments(): Promise<Appointment[]> {
@@ -13,10 +13,8 @@ export async function getAllAppointments(): Promise<Appointment[]> {
   return (data ?? []).map(mapRow);
 }
 
-// ── שליפת תורים לפי טלפון ("התורים שלי") ────────────────────────────────
-export async function getAppointmentsByPhone(
-  phone: string
-): Promise<Appointment[]> {
+// ── שליפת תורים לפי טלפון ────────────────────────────────────────────────
+export async function getAppointmentsByPhone(phone: string): Promise<Appointment[]> {
   const cleaned = phone.replace(/\D/g, "");
   const { data, error } = await supabase
     .from("appointments")
@@ -29,23 +27,20 @@ export async function getAppointmentsByPhone(
 }
 
 // ── יצירת תור חדש ────────────────────────────────────────────────────────
-export async function createAppointment(
-  booking: BookingFormData
-): Promise<Appointment> {
+export async function createAppointment(booking: BookingFormData & { serviceName?: string }): Promise<Appointment> {
   const { data, error } = await supabase
     .from("appointments")
-    .insert([
-      {
-        service_id: booking.serviceId,
-        service_name: booking.serviceId, // יעודכן בהמשך
-        date: booking.date,
-        time: booking.time,
-        name: booking.clientName,
-        phone: booking.clientPhone.replace(/\D/g, ""),
-        notes: booking.notes ?? "",
-        status: "pending",
-      },
-    ])
+    .insert([{
+      service_id: booking.serviceId,
+      service_name: booking.serviceName ?? booking.serviceId,
+      date: booking.date,
+      time: booking.time,
+      name: booking.clientName,
+      phone: booking.clientPhone.replace(/\D/g, ""),
+      notes: booking.notes ?? "",
+      status: "pending",
+      therapist_id: booking.therapistId ?? null,
+    }])
     .select()
     .single();
 
@@ -54,46 +49,101 @@ export async function createAppointment(
 }
 
 // ── עדכון סטטוס תור ──────────────────────────────────────────────────────
-export async function updateAppointmentStatus(
-  id: string,
-  status: Appointment["status"]
-): Promise<void> {
-  const { error } = await supabase
-    .from("appointments")
-    .update({ status })
-    .eq("id", id);
-
+export async function updateAppointmentStatus(id: string, status: Appointment["status"]): Promise<void> {
+  const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
   if (error) throw error;
 }
 
-// ── בדיקה אם שעה תפוסה ───────────────────────────────────────────────────
+// ── בדיקה אם שעה תפוסה (לפי מטפלת אם הוגדרה) ───────────────────────────
 export async function isTimeSlotTaken(
   date: string,
-  time: string
+  time: string,
+  therapistId?: string | null
 ): Promise<boolean> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("appointments")
     .select("id")
     .eq("date", date)
     .eq("time", time)
-    .neq("status", "cancelled")
-    .maybeSingle();
+    .neq("status", "cancelled");
 
+  if (therapistId) {
+    query = query.eq("therapist_id", therapistId);
+  }
+
+  const { data, error } = await query.maybeSingle();
   if (error) throw error;
   return !!data;
 }
 
 // ── עדכון דקות איחור לתור ────────────────────────────────────────────────
-export async function updateLateMinutes(
-  id: string,
-  lateMinutes: number | null
-): Promise<void> {
-  const { error } = await supabase
-    .from("appointments")
-    .update({ late_minutes: lateMinutes })
-    .eq("id", id);
+export async function updateLateMinutes(id: string, lateMinutes: number | null): Promise<void> {
+  const { error } = await supabase.from("appointments").update({ late_minutes: lateMinutes }).eq("id", id);
+  if (error) throw error;
+}
+
+// ── שליפת כל המטפלות ─────────────────────────────────────────────────────
+export async function getAllTherapists(): Promise<Therapist[]> {
+  const { data, error } = await supabase
+    .from("therapists")
+    .select("*")
+    .order("name", { ascending: true });
 
   if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    isActive: r.is_active ?? true,
+    serviceIds: r.service_ids ?? [],
+  }));
+}
+
+// ── הוספת מטפלת ──────────────────────────────────────────────────────────
+export async function createTherapist(name: string, serviceIds: string[]): Promise<Therapist> {
+  const { data, error } = await supabase
+    .from("therapists")
+    .insert([{ name, is_active: true, service_ids: serviceIds }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { id: data.id, name: data.name, isActive: data.is_active, serviceIds: data.service_ids ?? [] };
+}
+
+// ── עדכון מטפלת ──────────────────────────────────────────────────────────
+export async function updateTherapist(therapist: Therapist): Promise<void> {
+  const { error } = await supabase
+    .from("therapists")
+    .update({ name: therapist.name, is_active: therapist.isActive, service_ids: therapist.serviceIds })
+    .eq("id", therapist.id);
+
+  if (error) throw error;
+}
+
+// ── מחיקת מטפלת ──────────────────────────────────────────────────────────
+export async function deleteTherapist(id: string): Promise<void> {
+  const { error } = await supabase.from("therapists").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── שליפת תורים תפוסים של מטפלת בתאריך (לחישוב זמינות) ──────────────────
+export async function getTherapistBookedSlots(
+  therapistId: string,
+  date: string
+): Promise<Array<{ time: string; duration: number; breakMinutes: number }>> {
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("time, service_id")
+    .eq("therapist_id", therapistId)
+    .eq("date", date)
+    .neq("status", "cancelled");
+
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    time: r.time,
+    duration: 30, // fallback - יחושב מהשירות
+    breakMinutes: 0,
+  }));
 }
 
 // ── שליפת פרופילי לקוחות ─────────────────────────────────────────────────
@@ -106,51 +156,28 @@ export async function getClientProfiles(): Promise<ClientProfile[]> {
   if (error) throw error;
   const rows = data ?? [];
 
-  // קבץ לפי טלפון
   const map: Record<string, ClientProfile> = {};
   for (const row of rows) {
     const phone = row.phone ?? "";
     if (!map[phone]) {
-      map[phone] = {
-        phone,
-        name: row.name ?? "",
-        totalAppointments: 0,
-        completedAppointments: 0,
-        cancelledAppointments: 0,
-        avgLateMinutes: null,
-        score: 100,
-        lastAppointment: null,
-      };
+      map[phone] = { phone, name: row.name ?? "", totalAppointments: 0, completedAppointments: 0, cancelledAppointments: 0, avgLateMinutes: null, score: 100, lastAppointment: null };
     }
     const p = map[phone];
     p.totalAppointments++;
     if (row.status === "completed") p.completedAppointments++;
     if (row.status === "cancelled") p.cancelledAppointments++;
-    if (!p.lastAppointment || row.date > p.lastAppointment)
-      p.lastAppointment = row.date;
+    if (!p.lastAppointment || row.date > p.lastAppointment) p.lastAppointment = row.date;
   }
 
-  // חשב ממוצע איחור וציון
   for (const phone of Object.keys(map)) {
     const p = map[phone];
-    const lateRows = rows.filter(
-      (r) => r.phone === phone && typeof r.late_minutes === "number"
-    );
+    const lateRows = rows.filter((r) => r.phone === phone && typeof r.late_minutes === "number");
     if (lateRows.length > 0) {
-      p.avgLateMinutes =
-        lateRows.reduce((sum: number, r: Record<string,number>) => sum + (r.late_minutes ?? 0), 0) /
-        lateRows.length;
+      p.avgLateMinutes = lateRows.reduce((sum: number, r: Record<string, number>) => sum + (r.late_minutes ?? 0), 0) / lateRows.length;
     }
-
-    // ציון: מתחיל מ-100, מחסיר על ביטולים ואיחורים
     let score = 100;
-    if (p.totalAppointments > 0) {
-      const cancelRate = p.cancelledAppointments / p.totalAppointments;
-      score -= Math.round(cancelRate * 50); // עד -50 על ביטולים
-    }
-    if (p.avgLateMinutes !== null) {
-      score -= Math.min(30, Math.round(p.avgLateMinutes / 5) * 5); // עד -30 על איחורים
-    }
+    if (p.totalAppointments > 0) score -= Math.round((p.cancelledAppointments / p.totalAppointments) * 50);
+    if (p.avgLateMinutes !== null) score -= Math.min(30, Math.round(p.avgLateMinutes / 5) * 5);
     p.score = Math.max(0, score);
   }
 
@@ -159,37 +186,33 @@ export async function getClientProfiles(): Promise<ClientProfile[]> {
 
 // ── שליפת סיסמת ניהול ────────────────────────────────────────────────────
 export async function getAdminPassword(): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "admin_password")
-    .maybeSingle();
+  const { data, error } = await supabase.from("settings").select("value").eq("key", "admin_password").maybeSingle();
   if (error) return null;
   return data?.value ?? null;
 }
 
 // ── שמירת סיסמת ניהול ────────────────────────────────────────────────────
 export async function setAdminPassword(password: string): Promise<void> {
-  const { error } = await supabase
-    .from("settings")
-    .upsert({ key: "admin_password", value: password }, { onConflict: "key" });
+  const { error } = await supabase.from("settings").upsert({ key: "admin_password", value: password }, { onConflict: "key" });
   if (error) throw error;
 }
 
 // ── מיפוי שורת DB → טיפוס Appointment ───────────────────────────────────
-function mapRow(row: Record<string, string>): Appointment {
+function mapRow(row: Record<string, unknown>): Appointment {
   return {
-    id: row.id,
-    serviceId: row.service_id,
-    serviceName: row.service_name,
-    date: row.date,
-    time: row.time,
-    clientName: row.name,
-    clientPhone: row.phone,
-    notes: row.notes ?? "",
+    id: row.id as string,
+    serviceId: row.service_id as string,
+    serviceName: row.service_name as string,
+    date: row.date as string,
+    time: row.time as string,
+    clientName: row.name as string,
+    clientPhone: row.phone as string,
+    notes: (row.notes as string) ?? "",
     status: row.status as Appointment["status"],
-    createdAt: row.created_at,
+    createdAt: row.created_at as string,
     lateMinutes: row.late_minutes != null ? Number(row.late_minutes) : null,
+    therapistId: (row.therapist_id as string) ?? null,
+    therapistName: (row.therapist_name as string) ?? null,
   };
 }
 
