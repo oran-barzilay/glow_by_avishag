@@ -22,3 +22,4 @@ npm run build
 - **React + TypeScript** — ממשק משתמש
 - **shadcn-ui** — ספריית קומפוננטות
 - **Tailwind CSS** — עיצוב
+# glow_by_avishag
