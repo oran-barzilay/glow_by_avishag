@@ -117,7 +117,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [blockDate, setBlockDate] = useState<Date | undefined>(undefined);
   const [blockReason, setBlockReason] = useState("");
   const [blockFullDay, setBlockFullDay] = useState(true);
-  const [blockHours, setBlockHours] = useState("");
+  const [blockHours, setBlockHours] = useState<string[]>([]);
 
   // Late minutes editing
   const [lateEditId, setLateEditId] = useState<string | null>(null);
@@ -311,15 +311,49 @@ const Admin = ({ onLogout }: AdminProps) => {
     setSchedule((prev) => prev.map((d) => (d.dayOfWeek === dayOfWeek ? updated : d)));
   };
 
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const toTime = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+  };
+
+  const blockSlotStepMinutes = anchorStepMinutes;
+  const selectedBlockDaySchedule = blockDate
+    ? schedule.find((d) => d.dayOfWeek === blockDate.getDay())
+    : undefined;
+
+  const blockSlotOptions = !selectedBlockDaySchedule || !selectedBlockDaySchedule.isWorkingDay
+    ? []
+    : (() => {
+        const start = toMinutes(selectedBlockDaySchedule.startTime);
+        const end = toMinutes(selectedBlockDaySchedule.endTime);
+        const slots: string[] = [];
+        for (let t = start; t < end; t += blockSlotStepMinutes) {
+          slots.push(toTime(t));
+        }
+        return slots;
+      })();
+
+  const toggleBlockHour = (time: string) => {
+    setBlockHours((prev) =>
+      prev.includes(time) ? prev.filter((t) => t !== time) : [...prev, time].sort()
+    );
+  };
+
   const handleAddBlock = async () => {
     if (!blockDate) { toast.error("נא לבחור תאריך לחסימה"); return; }
-    const hours = blockFullDay ? null : blockHours.split(",").map((h) => h.trim()).filter(Boolean);
+    const hours = blockFullDay ? null : blockHours;
+    if (!blockFullDay && hours.length === 0) { toast.error("בחרי לפחות סלוט אחד לחסימה"); return; }
     await addBlockedDate({ date: format(blockDate, "yyyy-MM-dd"), blockedHours: hours, reason: blockReason || "ללא סיבה" });
     const updated = await getBlockedDates();
     setBlockedDates(updated);
     setBlockDate(undefined);
     setBlockReason("");
-    setBlockHours("");
+    setBlockHours([]);
     toast.success("התאריך נחסם בהצלחה");
   };
 
@@ -755,9 +789,41 @@ const Admin = ({ onLogout }: AdminProps) => {
                         <Switch checked={blockFullDay} onCheckedChange={setBlockFullDay} />
                       </div>
                       {!blockFullDay && (
-                        <div>
-                          <label className="mb-1.5 block text-sm font-medium">שעות לחסימה (מופרדות בפסיקים)</label>
-                          <Input value={blockHours} onChange={(e) => setBlockHours(e.target.value)} placeholder="09:00, 09:30, 10:00" />
+                        <div className="sm:col-span-2 space-y-2">
+                          <label className="mb-1.5 block text-sm font-medium">בחרי סלוטים לחסימה</label>
+                          {!blockDate ? (
+                            <p className="text-xs text-muted-foreground">בחרי קודם תאריך</p>
+                          ) : !selectedBlockDaySchedule || !selectedBlockDaySchedule.isWorkingDay ? (
+                            <p className="text-xs text-muted-foreground">היום שסומן סגור בשעות הפעילות</p>
+                          ) : (
+                            <div className="max-h-44 overflow-y-auto rounded-md border border-border p-2">
+                              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2" dir="ltr">
+                                {blockSlotOptions.map((slot) => {
+                                  const selected = blockHours.includes(slot);
+                                  return (
+                                    <button
+                                      key={slot}
+                                      type="button"
+                                      onClick={() => toggleBlockHour(slot)}
+                                      className={cn(
+                                        "rounded-md border px-2 py-1 text-xs transition-colors",
+                                        selected
+                                          ? "bg-destructive/10 border-destructive text-destructive"
+                                          : "bg-background border-border text-foreground hover:bg-muted"
+                                      )}
+                                    >
+                                      {slot}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {blockHours.length > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              נבחרו {blockHours.length} סלוטים לחסימה
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1010,7 +1076,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                     </button>
                   </div>
                   {confirmPassword && newPassword !== confirmPassword && (
-                    <p className="text-xs text-destructive">הסיסמאות אינן תואמות</p>
+                    <p className="text-xs text-destructive">הסיסאות אינן תואמות</p>
                   )}
                 </div>
 

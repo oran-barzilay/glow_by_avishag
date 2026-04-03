@@ -18,9 +18,9 @@ import { cn } from "@/lib/utils";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TimeSlotPicker } from "@/components/TimeSlotPicker";
 import { BookingForm } from "@/components/BookingForm";
-import { getServices, getAvailableSlots, createBooking, getTherapists, getBlockedDates } from "@/services/api";
+import { getServices, getAvailableSlots, createBooking, getTherapists, getBlockedDates, getWeeklySchedule } from "@/services/api";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { Service, TimeSlot, Therapist, BlockedDate } from "@/services/types";
+import { Service, TimeSlot, Therapist, BlockedDate, DaySchedule } from "@/services/types";
 import { toast } from "sonner";
 
 /**
@@ -44,6 +44,7 @@ const Booking = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [weeklySchedule, setWeeklySchedule] = useState<DaySchedule[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [selectedTherapistId, setSelectedTherapistId] = useState<string | null>(null);
@@ -66,12 +67,13 @@ const Booking = () => {
   maxBookingDate.setDate(maxBookingDate.getDate() + maxAdvanceDays);
   maxBookingDate.setHours(23, 59, 59, 999);
 
-  // Load services and therapists on mount
+  // Load services, therapists and blocked dates on mount
   useEffect(() => {
-    Promise.all([getServices(), getTherapists(), getBlockedDates()]).then(([svcData, therapistData, blocked]) => {
+    Promise.all([getServices(), getTherapists(), getBlockedDates(), getWeeklySchedule()]).then(([svcData, therapistData, blocked, weekly]) => {
       setServices(svcData);
       setTherapists(therapistData.filter((t) => t.isActive));
       setBlockedDates(blocked);
+      setWeeklySchedule(weekly);
       // If a service was passed via URL, pre-select it and go to step 1
       const preSelected = searchParams.get("service");
       if (preSelected && svcData.find((s) => s.id === preSelected)) {
@@ -80,6 +82,55 @@ const Booking = () => {
       }
     });
   }, [searchParams]);
+
+  // Sync blocked dates from DB so calendar always reflects latest admin changes
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshBlockedDates = async () => {
+      const data = await getBlockedDates();
+      if (mounted) setBlockedDates(data);
+    };
+
+    const interval = setInterval(refreshBlockedDates, 30_000);
+
+    if (!isSupabaseConfigured) {
+      return () => {
+        mounted = false;
+        clearInterval(interval);
+      };
+    }
+
+    const channel = supabase
+      .channel("blocked-dates-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "blocked_dates" },
+        () => {
+          refreshBlockedDates();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // If selected date becomes fully blocked, clear the selection immediately
+  useEffect(() => {
+    if (!selectedDate) return;
+    const dateStr = format(selectedDate, "yyyy-MM-dd");
+    const isFullyBlocked = blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
+    if (!isFullyBlocked) return;
+
+    setSelectedDate(undefined);
+    setSelectedTime(null);
+    if (currentStep > 2) setCurrentStep(2);
+    toast.info("התאריך שנבחר נחסם ואינו זמין יותר");
+  }, [blockedDates, selectedDate, currentStep]);
 
   // When date, therapist or refreshKey changes, refetch slots
   useEffect(() => {
@@ -353,6 +404,11 @@ const Booking = () => {
                   onSelect={handleDateSelect}
                   disabled={(date) => {
                     if (date < todayStart || date > maxBookingDate) return true;
+
+                    // ימים לא פעילים לפי שעות העבודה השגרתיות
+                    const day = weeklySchedule.find((d) => d.dayOfWeek === date.getDay());
+                    if (day && !day.isWorkingDay) return true;
+
                     const dateStr = format(date, "yyyy-MM-dd");
                     return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
                   }}
@@ -361,15 +417,20 @@ const Booking = () => {
                       const dateStr = format(date, "yyyy-MM-dd");
                       return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
                     },
+                    closed: (date) => {
+                      const day = weeklySchedule.find((d) => d.dayOfWeek === date.getDay());
+                      return !!day && !day.isWorkingDay;
+                    },
                   }}
                   modifiersClassNames={{
                     blocked: "bg-zinc-300/70 text-zinc-500 line-through opacity-70",
+                    closed: "bg-zinc-400/80 text-zinc-600 opacity-80",
                   }}
                   locale={he}
                   className="rounded-lg border border-border bg-card p-3 shadow-card pointer-events-auto"
                 />
               </div>
-              {blockedDates.some((b) => b.blockedHours === null) && (
+              {(blockedDates.some((b) => b.blockedHours === null) || weeklySchedule.some((d) => !d.isWorkingDay)) && (
                 <p className="mt-3 text-center text-xs text-muted-foreground">
                   ימים מעומעמים אינם זמינים להזמנה
                 </p>
