@@ -129,6 +129,29 @@ const Admin = ({ onLogout }: AdminProps) => {
     return saved ? parseInt(saved) : 30;
   });
 
+  const [holidayToggleLoading, setHolidayToggleLoading] = useState(false);
+
+  // טווח תצוגה לרשימת חסימות לפי חלון ההזמנה המקסימלי
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const maxBookingDate = new Date(todayStart);
+  maxBookingDate.setDate(maxBookingDate.getDate() + maxAdvanceDays);
+  maxBookingDate.setHours(23, 59, 59, 999);
+
+  const holidayDatesSet = new Set(getHolidayDates());
+  const erevDatesSet = new Set(getErevChagDates());
+  const blockedDateSet = new Set(blockedDates.filter((b) => b.blockedHours === null).map((b) => b.date));
+
+  const holidaysBlocked = [...holidayDatesSet].every((d) => blockedDateSet.has(d));
+  const erevBlocked = [...erevDatesSet].every((d) => blockedDateSet.has(d));
+
+  const visibleBlockedDates = blockedDates
+    .filter((b) => {
+      const d = new Date(`${b.date}T00:00:00`);
+      return d >= todayStart && d <= maxBookingDate;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   // קפיצת זמן לפי שירות עוגן
   const anchorService = services.find((s) => s.isAnchor);
   const anchorStepMinutes = anchorService
@@ -162,35 +185,63 @@ const Admin = ({ onLogout }: AdminProps) => {
   };
 
   const handleBlockHolidays = async () => {
-    const holidayDates = getHolidayDates();
-    const nameMap = getHolidayNameMap();
-    const existing = new Set(blockedDates.map((b) => b.date));
-    const toAdd = holidayDates.filter((d) => !existing.has(d));
-    if (toAdd.length === 0) {
-      toast.info("כל ימי החג כבר חסומים");
-      return;
+    if (holidayToggleLoading) return;
+    setHolidayToggleLoading(true);
+    try {
+      const holidayDates = getHolidayDates();
+      const nameMap = getHolidayNameMap();
+      const existingByDate = new Map(blockedDates.map((b) => [b.date, b]));
+
+      if (holidaysBlocked) {
+        // Toggle OFF: הסר חסימות חג קיימות
+        const toRemove = blockedDates.filter((b) => holidayDates.includes(b.date));
+        await Promise.all(toRemove.map((b) => removeBlockedDate(b.id)));
+        toast.success(`הוסרו ${toRemove.length} חסימות חג`);
+      } else {
+        // Toggle ON: הוסף חסימות חסרות בלבד
+        const toAdd = holidayDates.filter((d) => !existingByDate.has(d));
+        await Promise.all(
+          toAdd.map((d) =>
+            addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "חג" })
+          )
+        );
+        toast.success(`נחסמו ${toAdd.length} ימי חג`);
+      }
+
+      setBlockedDates(await getBlockedDates());
+    } finally {
+      setHolidayToggleLoading(false);
     }
-    for (const d of toAdd) {
-      await addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "חג" });
-    }
-    setBlockedDates(await getBlockedDates());
-    toast.success(`נחסמו ${toAdd.length} ימי חג`);
   };
 
   const handleBlockErevChag = async () => {
-    const erevDates = getErevChagDates();
-    const nameMap = getHolidayNameMap();
-    const existing = new Set(blockedDates.map((b) => b.date));
-    const toAdd = erevDates.filter((d) => !existing.has(d));
-    if (toAdd.length === 0) {
-      toast.info("כל ערבי החג כבר חסומים");
-      return;
+    if (holidayToggleLoading) return;
+    setHolidayToggleLoading(true);
+    try {
+      const erevDates = getErevChagDates();
+      const nameMap = getHolidayNameMap();
+      const existingByDate = new Map(blockedDates.map((b) => [b.date, b]));
+
+      if (erevBlocked) {
+        // Toggle OFF: הסר חסימות ערב חג קיימות
+        const toRemove = blockedDates.filter((b) => erevDates.includes(b.date));
+        await Promise.all(toRemove.map((b) => removeBlockedDate(b.id)));
+        toast.success(`הוסרו ${toRemove.length} חסימות ערב חג`);
+      } else {
+        // Toggle ON: הוסף חסימות חסרות בלבד
+        const toAdd = erevDates.filter((d) => !existingByDate.has(d));
+        await Promise.all(
+          toAdd.map((d) =>
+            addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "ערב חג" })
+          )
+        );
+        toast.success(`נחסמו ${toAdd.length} ערבי חג`);
+      }
+
+      setBlockedDates(await getBlockedDates());
+    } finally {
+      setHolidayToggleLoading(false);
     }
-    for (const d of toAdd) {
-      await addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "ערב חג" });
-    }
-    setBlockedDates(await getBlockedDates());
-    toast.success(`נחסמו ${toAdd.length} ערבי חג`);
   };
 
   // Keep the existing "הזז" buttons working without extra modal state.
@@ -652,7 +703,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                 icon={<CalendarOff className="h-4 w-4 text-destructive" />}
                 open={blockedOpen}
                 onToggle={() => setBlockedOpen((v) => !v)}
-                badge={blockedDates.length}
+                badge={visibleBlockedDates.length}
               />
               {blockedOpen && (
                 <div className="space-y-3 pt-1 pb-2">
@@ -663,16 +714,16 @@ const Admin = ({ onLogout }: AdminProps) => {
                       <CalendarOff className="h-4 w-4 text-primary" />
                       חסימה מהירה לפי לוח השנה העברי
                     </div>
-                    <p className="text-xs text-muted-foreground">חוסם אוטומטית את כל ימי החג / ערבי החג לשנים הקרובות (2025–2028)</p>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleBlockHolidays}>
-                        <CalendarOff className="h-3.5 w-3.5" />
-                        חסום ימי חג
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleBlockErevChag}>
-                        <Clock className="h-3.5 w-3.5" />
-                        חסום ערבי חג
-                      </Button>
+                    <p className="text-xs text-muted-foreground">טוגל לחסימה/הסרה אוטומטית של חגים וערבי חג.</p>
+                    <div className="grid gap-3 mt-2">
+                      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                        <div className="text-sm">חסימת כל ימי החג</div>
+                        <Switch checked={holidaysBlocked} onCheckedChange={handleBlockHolidays} disabled={holidayToggleLoading} />
+                      </div>
+                      <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                        <div className="text-sm">חסימת כל ערבי החג</div>
+                        <Switch checked={erevBlocked} onCheckedChange={handleBlockErevChag} disabled={holidayToggleLoading} />
+                      </div>
                     </div>
                   </div>
 
@@ -716,10 +767,10 @@ const Admin = ({ onLogout }: AdminProps) => {
                   </div>
 
                   {/* Blocked list */}
-                  {blockedDates.length === 0 ? (
-                    <p className="py-6 text-center text-muted-foreground">אין תאריכים חסומים</p>
+                  {visibleBlockedDates.length === 0 ? (
+                    <p className="py-6 text-center text-muted-foreground">אין חסימות בטווח ההזמנה המקסימלי</p>
                   ) : (
-                    blockedDates.map((block) => (
+                    visibleBlockedDates.map((block) => (
                       <div key={block.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-card">
                         <div>
                           <span className="font-medium">{block.date}</span>

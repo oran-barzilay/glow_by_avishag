@@ -363,7 +363,7 @@ const Booking = () => {
                     },
                   }}
                   modifiersClassNames={{
-                    blocked: "opacity-30 line-through bg-muted text-muted-foreground",
+                    blocked: "bg-zinc-300/70 text-zinc-500 line-through opacity-70",
                   }}
                   locale={he}
                   className="rounded-lg border border-border bg-card p-3 shadow-card pointer-events-auto"
