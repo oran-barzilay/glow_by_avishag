@@ -67,6 +67,7 @@ import {
   rescheduleAppointment,
   deleteAppointment,
   createAdminExceptionAppointment,
+  hasClientCancelRequest,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
@@ -194,6 +195,12 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // שינוי מועד תור (מנהל) - מודאל פנימי במקום window.prompt
+  const [rescheduleApt, setRescheduleApt] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
 
   const openExceptionModal = () => {
     const defaultService = services[0];
@@ -328,15 +335,71 @@ const Admin = ({ onLogout }: AdminProps) => {
   };
 
   // Keep the existing "הזז" buttons working without extra modal state.
-  const setRescheduleApt = async (apt: Appointment) => {
-    const dateInput = window.prompt("תאריך חדש (YYYY-MM-DD)", apt.date);
-    if (!dateInput) return;
-    const timeInput = window.prompt("שעה חדשה (HH:MM)", apt.time);
-    if (!timeInput) return;
-    await rescheduleAppointment(apt.id, dateInput, timeInput);
-    setAppointments((prev) => prev.map((a) => (a.id === apt.id ? { ...a, date: dateInput, time: timeInput } : a)));
-    toast.success("התור הוזז בהצלחה");
+  const setRescheduleAptModal = (apt: Appointment) => {
+    setRescheduleApt(apt);
+    setRescheduleDate(apt.date);
+    setRescheduleTime(apt.time);
   };
+
+  const handleSaveReschedule = async () => {
+    if (!rescheduleApt) return;
+    if (!rescheduleDate || !rescheduleTime) {
+      toast.error("נא לבחור תאריך ושעה");
+      return;
+    }
+    setRescheduleSaving(true);
+    try {
+      await rescheduleAppointment(rescheduleApt.id, rescheduleDate, rescheduleTime);
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.id === rescheduleApt.id ? { ...a, date: rescheduleDate, time: rescheduleTime } : a
+        )
+      );
+      toast.success("התור הוזז בהצלחה");
+      setRescheduleApt(null);
+    } catch {
+      toast.error("שגיאה בהזזת התור");
+    } finally {
+      setRescheduleSaving(false);
+    }
+  };
+
+  const parseDurationFromNotes = (notes?: string | null): number | null => {
+    if (!notes) return null;
+    const m = notes.match(/\[dur=(\d+)\]/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  const getAppointmentTotalBlockMinutes = (apt: Appointment): number => {
+    const svc = services.find((s) => s.id === apt.serviceId);
+    if (svc) return svc.duration + (svc.breakMinutes ?? 0);
+    return parseDurationFromNotes(apt.notes) ?? 30;
+  };
+
+  const minutesFromHHMM = (time: string): number => {
+    const [h, m] = time.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const rescheduleConflict = (() => {
+    if (!rescheduleApt || !rescheduleDate || !rescheduleTime || !rescheduleApt.therapistId) return null;
+
+    const start = minutesFromHHMM(rescheduleTime);
+    const end = start + getAppointmentTotalBlockMinutes(rescheduleApt);
+
+    return appointments.find((other) => {
+      if (other.id === rescheduleApt.id) return false;
+      if (other.status === "cancelled") return false;
+      if (other.date !== rescheduleDate) return false;
+      if (other.therapistId !== rescheduleApt.therapistId) return false;
+
+      const otherStart = minutesFromHHMM(other.time);
+      const otherEnd = otherStart + getAppointmentTotalBlockMinutes(other);
+      return start < otherEnd && end > otherStart;
+    }) ?? null;
+  })();
 
   useEffect(() => {
     Promise.all([
@@ -477,7 +540,7 @@ const Admin = ({ onLogout }: AdminProps) => {
 
   const handleChangePassword = async () => {
     if (!newPassword) { toast.error("יש להזין סיסמה חדשה"); return; }
-    if (newPassword !== confirmPassword) { toast.error("הסיסמאות אינן תואמות"); return; }
+    if (newPassword !== confirmPassword) { toast.error("הסיסאות אינן תואמות"); return; }
     if (newPassword.length < 4) { toast.error("הסיסמה חייבת להכיל לפחות 4 תווים"); return; }
 
     // verify current password
@@ -498,6 +561,20 @@ const Admin = ({ onLogout }: AdminProps) => {
       setSavingPassword(false);
     }
   };
+
+  // ── DEBUG: dump entire state ─────────────────────────────────────────────
+  // useEffect(() => {
+  //   const dump = {
+  //     appointments,
+  //     schedule,
+  //     blockedDates,
+  //     services,
+  //     clientProfiles,
+  //     therapists,
+  //     maxAdvanceDays,
+  //   };
+  //   console.log("Admin state dump:", JSON.stringify(dump, null, 2));
+  // }, [appointments, schedule, blockedDates, services, clientProfiles, therapists, maxAdvanceDays]);
 
   if (loading) {
     return (
@@ -618,6 +695,9 @@ const Admin = ({ onLogout }: AdminProps) => {
                           {apt.therapistName && ` · ${apt.therapistName}`}
                         </p>
                         {apt.notes && <p className="mt-1 text-xs text-muted-foreground italic">הערה: {apt.notes}</p>}
+                        {apt.status === "confirmed" && hasClientCancelRequest(apt.notes) && (
+                          <p className="mt-1 text-xs text-amber-700 font-medium">לקוח ביקש ביטול - נדרש אישור מנהל</p>
+                        )}
                         {apt.lateMinutes != null && (
                           <p className="mt-1 text-xs text-amber-600 font-medium">⏱ איחר {apt.lateMinutes} דקות</p>
                         )}
@@ -638,7 +718,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                           </Button>
                         )}
                         {(apt.status === "pending" || apt.status === "confirmed") && (
-                          <Button variant="outline" size="sm" onClick={() => setRescheduleApt(apt)}
+                          <Button variant="outline" size="sm" onClick={() => setRescheduleAptModal(apt)}
                             className="gap-1 text-blue-600 border-blue-200 hover:text-blue-700">
                             <Clock className="h-3.5 w-3.5" />הזז
                           </Button>
@@ -646,7 +726,8 @@ const Admin = ({ onLogout }: AdminProps) => {
                         {(apt.status === "pending" || apt.status === "confirmed") && (
                           <Button variant="outline" size="sm" onClick={() => handleCancelAppointment(apt.id)}
                             className="gap-1 text-destructive hover:text-destructive">
-                            בטל<X className="h-3 w-3" />
+                            {apt.status === "confirmed" && hasClientCancelRequest(apt.notes) ? "אשר ביטול" : "בטל"}
+                            <X className="h-3 w-3" />
                           </Button>
                         )}
                         {(apt.status === "confirmed" || apt.status === "completed") && (
@@ -700,7 +781,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                                 className="gap-1 text-green-600 border-green-200 hover:text-green-700 text-xs">
                                 <Check className="h-3 w-3" />החזר
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => setRescheduleApt(apt)}
+                              <Button variant="outline" size="sm" onClick={() => setRescheduleAptModal(apt)}
                                 className="gap-1 text-blue-600 border-blue-200 hover:text-blue-700 text-xs">
                                 <Clock className="h-3 w-3" />הזז
                               </Button>
@@ -1196,6 +1277,57 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         </Tabs>
       </div>
+
+      {rescheduleApt && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setRescheduleApt(null)}>
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">הזזת תור</h3>
+              <button onClick={() => setRescheduleApt(null)}><X className="h-4 w-4 text-muted-foreground" /></button>
+            </div>
+
+            <p className="text-sm text-muted-foreground mb-4">
+              {rescheduleApt.clientName} · {rescheduleApt.serviceName}
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium">תאריך חדש</label>
+                <Input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="mt-1"
+                  dir="ltr"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">שעה חדשה</label>
+                <Input
+                  type="time"
+                  value={rescheduleTime}
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  className="mt-1"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            {rescheduleConflict && (
+              <p className="mt-3 text-sm text-destructive">
+                אזהרה: קיימת חפיפה עם תור של {rescheduleConflict.clientName} בשעה {rescheduleConflict.time}.
+              </p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRescheduleApt(null)}>ביטול</Button>
+              <Button variant="hero" onClick={handleSaveReschedule} disabled={rescheduleSaving || !!rescheduleConflict}>
+                {rescheduleSaving ? "שומר..." : "שמור שינוי"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {exceptionOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setExceptionOpen(false)}>
