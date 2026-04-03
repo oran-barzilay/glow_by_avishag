@@ -23,6 +23,7 @@ import {
 import {
   getAllAppointments as dbGetAll,
   createAppointment as dbCreate,
+  createAdminAppointment as dbCreateAdmin,
   updateAppointmentStatus,
   isTimeSlotTaken,
   updateLateMinutes as dbUpdateLateMinutes,
@@ -82,6 +83,14 @@ export async function getAvailableSlots(
 ): Promise<TimeSlot[]> {
   await delay(200);
 
+  const parseDurationFromNotes = (notes?: string | null): number | null => {
+    if (!notes) return null;
+    const m = notes.match(/\[dur=(\d+)\]/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
   const dateObj = new Date(date + "T00:00:00");
   const dayOfWeek = dateObj.getDay();
 
@@ -139,7 +148,7 @@ export async function getAvailableSlots(
     const { supabase } = await import("@/lib/supabase");
     let query = supabase
       .from("appointments")
-      .select("time, service_id")
+      .select("time, service_id, notes")
       .eq("date", date)
       .neq("status", "cancelled");
     if (therapistId) query = query.eq("therapist_id", therapistId);
@@ -147,9 +156,12 @@ export async function getAvailableSlots(
     if (data) {
       bookedSlots = data.map((r) => {
         const svc = allServices.find((s) => s.id === r.service_id);
+        const dynamicDuration = parseDurationFromNotes((r as { notes?: string | null }).notes);
         return {
           time: r.time,
-          totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0),
+          totalBlock: svc
+            ? (svc.duration + (svc.breakMinutes ?? 0))
+            : (dynamicDuration ?? 30),
         };
       });
     }
@@ -163,9 +175,12 @@ export async function getAvailableSlots(
       )
       .map((a) => {
         const svc = mockServices.find((s) => s.id === a.serviceId);
+        const dynamicDuration = parseDurationFromNotes(a.notes);
         return {
           time: a.time,
-          totalBlock: (svc?.duration ?? 30) + (svc?.breakMinutes ?? 0),
+          totalBlock: svc
+            ? (svc.duration + (svc.breakMinutes ?? 0))
+            : (dynamicDuration ?? 30),
         };
       });
   }
@@ -323,6 +338,72 @@ export async function createBooking(data: BookingFormData): Promise<Appointment>
   };
   mockAppointments.push(newAppointment);
   return newAppointment;
+}
+
+export type CreateAdminExceptionInput = {
+  serviceId: string;
+  date: string;
+  time: string;
+  clientName: string;
+  clientPhone: string;
+  notes?: string;
+  therapistId?: string | null;
+  desiredDurationMinutes?: number;
+  customServiceName?: string;
+};
+
+export async function createAdminExceptionAppointment(
+  data: CreateAdminExceptionInput
+): Promise<Appointment> {
+  const durationTag = data.desiredDurationMinutes && data.desiredDurationMinutes > 0
+    ? `[dur=${data.desiredDurationMinutes}]`
+    : "";
+  const mergedNotes = [durationTag, data.notes ?? ""].filter(Boolean).join(" ").trim();
+
+  const isOther = data.serviceId === "__other__";
+  const effectiveServiceId = isOther ? "custom-other" : data.serviceId;
+
+  if (useSupabase) {
+    const allServices = await getServices();
+    const service = allServices.find((s) => s.id === data.serviceId);
+    let therapistName: string | undefined;
+    if (data.therapistId) {
+      const therapistList = await dbGetAllTherapists();
+      therapistName = therapistList.find((t) => t.id === data.therapistId)?.name;
+    }
+
+    return dbCreateAdmin({
+      serviceId: effectiveServiceId,
+      date: data.date,
+      time: data.time,
+      clientName: data.clientName,
+      clientPhone: data.clientPhone,
+      notes: mergedNotes,
+      therapistId: data.therapistId ?? null,
+      serviceName: isOther ? (data.customServiceName?.trim() || "טיפול אחר") : (service?.name ?? data.serviceId),
+      therapistName,
+      status: "confirmed",
+    });
+  }
+
+  await delay(250);
+  const service = mockServices.find((s) => s.id === data.serviceId);
+  const apt: Appointment = {
+    id: `apt-${Date.now()}`,
+    serviceId: effectiveServiceId,
+    serviceName: isOther ? (data.customServiceName?.trim() || "טיפול אחר") : (service?.name ?? data.serviceId),
+    date: data.date,
+    time: data.time,
+    clientName: data.clientName,
+    clientPhone: data.clientPhone,
+    notes: mergedNotes,
+    status: "confirmed",
+    createdAt: new Date().toISOString(),
+    therapistId: data.therapistId ?? null,
+    therapistName: mockTherapists.find((t) => t.id === data.therapistId)?.name ?? null,
+  };
+  mockAppointments.push(apt);
+  return apt;
 }
 
 // ============================================================

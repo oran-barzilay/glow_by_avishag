@@ -49,6 +49,35 @@ export async function createAppointment(booking: BookingFormData & { serviceName
   return mapRow(data);
 }
 
+// ── יצירת תור חריג (מנהל) ────────────────────────────────────────────────
+export async function createAdminAppointment(
+  booking: BookingFormData & {
+    serviceName?: string;
+    therapistName?: string;
+    status?: Appointment["status"];
+  }
+): Promise<Appointment> {
+  const { data, error } = await supabase
+    .from("appointments")
+    .insert([{
+      service_id: booking.serviceId,
+      service_name: booking.serviceName ?? booking.serviceId,
+      date: booking.date,
+      time: booking.time,
+      name: booking.clientName,
+      phone: (booking.clientPhone ?? "").replace(/\D/g, ""),
+      notes: booking.notes ?? "",
+      status: booking.status ?? "confirmed",
+      therapist_id: booking.therapistId ?? null,
+      therapist_name: booking.therapistName ?? null,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapRow(data);
+}
+
 // ── מחיקת תור לצמיתות ────────────────────────────────────────────────────
 export async function deleteAppointment(id: string): Promise<void> {
   const { error } = await supabase.from("appointments").delete().eq("id", id);
@@ -231,4 +260,3 @@ function mapRow(row: Record<string, unknown>): Appointment {
     therapistName: (row.therapist_name as string) ?? null,
   };
 }
-

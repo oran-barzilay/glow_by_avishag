@@ -45,9 +45,18 @@ function yToTime(y: number): string {
   return `${String(finalH).padStart(2, "0")}:${String(finalM).padStart(2, "0")}`;
 }
 
+function parseDurationFromNotes(notes?: string | null): number | null {
+  if (!notes) return null;
+  const m = notes.match(/\[dur=(\d+)\]/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function aptHeight(apt: Appointment, services: Service[]): number {
   const svc = services.find((s) => s.id === apt.serviceId);
-  const mins = svc?.duration ?? 30;
+  const durationFromNotes = parseDurationFromNotes(apt.notes);
+  const mins = durationFromNotes ?? svc?.duration ?? 30;
   return (mins / 60) * HOUR_HEIGHT;
 }
 
@@ -74,6 +83,7 @@ function ReschedulePopover({
   const [saving, setSaving] = useState(false);
 
   const svc = services.find((s) => s.id === apt.serviceId);
+  const durationFromNotes = parseDurationFromNotes(apt.notes);
 
   const loadSlots = async (date: string) => {
     setNewDate(date);
@@ -116,6 +126,7 @@ function ReschedulePopover({
           <p className="font-medium">{apt.clientName} · {apt.serviceName}</p>
           <p className="text-muted-foreground">כעת: {apt.date} ב-{apt.time}</p>
           {svc && <p className="text-xs text-muted-foreground">משך: {svc.duration} דק׳{svc.breakMinutes ? ` + ${svc.breakMinutes} הפסקה` : ""}</p>}
+          {!svc && durationFromNotes && <p className="text-xs text-muted-foreground">משך: {durationFromNotes} דק׳</p>}
         </div>
 
         <div className="space-y-3">

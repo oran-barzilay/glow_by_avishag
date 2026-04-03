@@ -65,6 +65,7 @@ import {
   getTherapists,
   rescheduleAppointment,
   deleteAppointment,
+  createAdminExceptionAppointment,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
@@ -131,6 +132,21 @@ const Admin = ({ onLogout }: AdminProps) => {
 
   const [holidayToggleLoading, setHolidayToggleLoading] = useState(false);
 
+  // תור חריג (מנהל)
+  const [exceptionOpen, setExceptionOpen] = useState(false);
+  const [exceptionSaving, setExceptionSaving] = useState(false);
+  const [exceptionForm, setExceptionForm] = useState(() => ({
+    serviceId: "",
+    customServiceName: "",
+    desiredDurationMinutes: "30",
+    therapistId: "",
+    date: format(new Date(), "yyyy-MM-dd"),
+    time: "09:00",
+    clientName: "",
+    clientPhone: "",
+    notes: "",
+  }));
+
   // טווח תצוגה לרשימת חסימות לפי חלון ההזמנה המקסימלי
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -177,6 +193,72 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  const openExceptionModal = () => {
+    const defaultService = services[0];
+    setExceptionForm((prev) => ({
+      ...prev,
+      serviceId: defaultService?.id ?? prev.serviceId,
+      customServiceName: "",
+      desiredDurationMinutes: String(defaultService?.duration ?? 30),
+      therapistId: therapists.find((t) => t.isActive)?.id ?? prev.therapistId,
+      date: format(new Date(), "yyyy-MM-dd"),
+      time: prev.time || "09:00",
+    }));
+    setExceptionOpen(true);
+  };
+
+  const selectedExceptionService = services.find((s) => s.id === exceptionForm.serviceId);
+
+  const handleExceptionServiceChange = (value: string) => {
+    setExceptionForm((prev) => ({
+      ...prev,
+      serviceId: value,
+      desiredDurationMinutes:
+        value === "__other__"
+          ? prev.desiredDurationMinutes
+          : String(services.find((s) => s.id === value)?.duration ?? 30),
+    }));
+  };
+
+  const isOtherExceptionService = exceptionForm.serviceId === "__other__";
+
+  const handleCreateException = async () => {
+    const desiredDuration = Number(exceptionForm.desiredDurationMinutes);
+    if (!exceptionForm.serviceId || !exceptionForm.therapistId || !exceptionForm.date || !exceptionForm.time || !exceptionForm.clientName) {
+      toast.error("נא למלא את כל שדות החובה");
+      return;
+    }
+    if (!Number.isFinite(desiredDuration) || desiredDuration <= 0) {
+      toast.error("נא להזין אורך טיפול תקין");
+      return;
+    }
+    if (isOtherExceptionService && !exceptionForm.customServiceName.trim()) {
+      toast.error("נא להזין סוג טיפול עבור 'אחר'");
+      return;
+    }
+    setExceptionSaving(true);
+    try {
+      const apt = await createAdminExceptionAppointment({
+        serviceId: exceptionForm.serviceId,
+        customServiceName: isOtherExceptionService ? exceptionForm.customServiceName.trim() : undefined,
+        desiredDurationMinutes: desiredDuration,
+        therapistId: exceptionForm.therapistId,
+        date: exceptionForm.date,
+        time: exceptionForm.time,
+        clientName: exceptionForm.clientName,
+        clientPhone: exceptionForm.clientPhone,
+        notes: exceptionForm.notes,
+      });
+      setAppointments((prev) => [...prev, apt]);
+      setExceptionOpen(false);
+      toast.success("התור החריג נוסף בהצלחה");
+    } catch {
+      toast.error("שגיאה ביצירת תור חריג");
+    } finally {
+      setExceptionSaving(false);
+    }
+  };
 
   const handleMaxAdvanceDaysChange = (value: number) => {
     setMaxAdvanceDays(value);
@@ -504,6 +586,13 @@ const Admin = ({ onLogout }: AdminProps) => {
 
               return (
                 <div className="space-y-3">
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
+                      <Plus className="h-4 w-4" />
+                      הוספת תור חריג
+                    </Button>
+                  </div>
+
                   {/* תורים פעילים */}
                   {activeApts.length === 0 && (
                     <p className="py-8 text-center text-muted-foreground">אין תורים עתידיים פעילים</p>
@@ -636,19 +725,27 @@ const Admin = ({ onLogout }: AdminProps) => {
 
           {/* ===== TAB: DAILY CALENDAR ===== */}
           <TabsContent value="calendar">
-            {therapists.length === 0 ? (
-              <p className="py-12 text-center text-muted-foreground">הוסיפי מטפלת כדי לצפות ביומן</p>
-            ) : (
-              <AdminDailyCalendar
-                appointments={appointments}
-                therapists={therapists}
-                services={services}
-                schedule={schedule}
-                onAppointmentUpdated={(updated) =>
-                  setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
-                }
-              />
-            )}
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
+                  <Plus className="h-4 w-4" />
+                  הוספת תור חריג
+                </Button>
+              </div>
+              {therapists.length === 0 ? (
+                <p className="py-12 text-center text-muted-foreground">הוסיפי מטפלת כדי לצפות ביומן</p>
+              ) : (
+                <AdminDailyCalendar
+                  appointments={appointments}
+                  therapists={therapists}
+                  services={services}
+                  schedule={schedule}
+                  onAppointmentUpdated={(updated) =>
+                    setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
+                  }
+                />
+              )}
+            </div>
           </TabsContent>
 
           {/* ===== TAB: THERAPISTS ===== */}
@@ -1098,6 +1195,90 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         </Tabs>
       </div>
+
+      {exceptionOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setExceptionOpen(false)}>
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">הוספת תור חריג</h3>
+              <button onClick={() => setExceptionOpen(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium">שירות*</label>
+                <select
+                  value={exceptionForm.serviceId}
+                  onChange={(e) => handleExceptionServiceChange(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">בחרי שירות</option>
+                  {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  <option value="__other__">אחר...</option>
+                </select>
+              </div>
+
+              {isOtherExceptionService && (
+                <div className="sm:col-span-2">
+                  <label className="text-sm font-medium">סוג טיפול (אחר)*</label>
+                  <Input
+                    value={exceptionForm.customServiceName}
+                    onChange={(e) => setExceptionForm((p) => ({ ...p, customServiceName: e.target.value }))}
+                    className="mt-1"
+                    placeholder="לדוגמה: טיפול ייחודי"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="text-sm font-medium">אורך טיפול (דקות)*</label>
+                <Input
+                  type="number"
+                  min={5}
+                  step={5}
+                  value={exceptionForm.desiredDurationMinutes}
+                  onChange={(e) => setExceptionForm((p) => ({ ...p, desiredDurationMinutes: e.target.value }))}
+                  className="mt-1"
+                  dir="ltr"
+                />
+                {!isOtherExceptionService && selectedExceptionService && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">ברירת מחדל מהשירות: {selectedExceptionService.duration} דק׳</p>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">תאריך*</label>
+                <Input type="date" value={exceptionForm.date} onChange={(e) => setExceptionForm((p) => ({ ...p, date: e.target.value }))} className="mt-1" dir="ltr" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">שעה*</label>
+                <Input type="time" value={exceptionForm.time} onChange={(e) => setExceptionForm((p) => ({ ...p, time: e.target.value }))} className="mt-1" dir="ltr" />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">שם לקוח*</label>
+                <Input value={exceptionForm.clientName} onChange={(e) => setExceptionForm((p) => ({ ...p, clientName: e.target.value }))} className="mt-1" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">טלפון</label>
+                <Input value={exceptionForm.clientPhone} onChange={(e) => setExceptionForm((p) => ({ ...p, clientPhone: e.target.value }))} className="mt-1" dir="ltr" />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-sm font-medium">הערה</label>
+                <Input value={exceptionForm.notes} onChange={(e) => setExceptionForm((p) => ({ ...p, notes: e.target.value }))} className="mt-1" />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setExceptionOpen(false)}>ביטול</Button>
+              <Button variant="hero" onClick={handleCreateException} disabled={exceptionSaving}>
+                {exceptionSaving ? "שומר..." : "הוספה"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
