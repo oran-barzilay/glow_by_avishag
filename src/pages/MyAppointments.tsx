@@ -6,8 +6,8 @@
 
 import { useEffect, useState } from "react";
 import { getAppointmentsByPhone } from "@/lib/db";
-import { getAppointments, getAvailableSlots, rescheduleAppointment } from "@/services/api";
-import { Appointment } from "@/services/types";
+import { getAppointments, getAvailableSlots, rescheduleAppointmentByClient, getBlockedDates, getWeeklySchedule } from "@/services/api";
+import { Appointment, BlockedDate, DaySchedule } from "@/services/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -58,10 +58,23 @@ function RescheduleModal({
   const [slots, setSlots] = useState<{ time: string; available: boolean }[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [weeklySchedule, setWeeklySchedule] = useState<DaySchedule[]>([]);
+
+  useEffect(() => {
+    Promise.all([getBlockedDates(), getWeeklySchedule()]).then(([blocks, weekly]) => {
+      setBlockedDates(blocks);
+      setWeeklySchedule(weekly);
+    });
+  }, []);
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
 
   const maxAdvanceDays = parseInt(localStorage.getItem("maxAdvanceDays") ?? "30");
   const maxDate = new Date();
   maxDate.setDate(maxDate.getDate() + maxAdvanceDays);
+  maxDate.setHours(23, 59, 59, 999);
 
   const handleDateSelect = async (date: Date | undefined) => {
     if (!date) return;
@@ -79,9 +92,9 @@ function RescheduleModal({
     setSaving(true);
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd");
-      await rescheduleAppointment(appointment.id, dateStr, time);
-      toast.success("התור הוזז בהצלחה ✓");
-      onSaved({ ...appointment, date: dateStr, time });
+      await rescheduleAppointmentByClient(appointment.id, dateStr, time);
+      toast.success("הבקשה לשינוי נקלטה ונשלחה לאישור מנהל ✓");
+      onSaved({ ...appointment, date: dateStr, time, status: "pending" });
       onClose();
     } catch {
       toast.error("שגיאה בשמירת השינוי");
@@ -116,7 +129,28 @@ function RescheduleModal({
               mode="single"
               selected={selectedDate}
               onSelect={handleDateSelect}
-              disabled={(d) => d < new Date() || d > maxDate}
+              disabled={(d) => {
+                if (d < todayStart || d > maxDate) return true;
+                const dateStr = format(d, "yyyy-MM-dd");
+                const isBlocked = blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
+                if (isBlocked) return true;
+                const daySchedule = weeklySchedule.find((w) => w.dayOfWeek === d.getDay());
+                return !!daySchedule && !daySchedule.isWorkingDay;
+              }}
+              modifiers={{
+                blocked: (d) => {
+                  const dateStr = format(d, "yyyy-MM-dd");
+                  return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
+                },
+                closed: (d) => {
+                  const daySchedule = weeklySchedule.find((w) => w.dayOfWeek === d.getDay());
+                  return !!daySchedule && !daySchedule.isWorkingDay;
+                },
+              }}
+              modifiersClassNames={{
+                blocked: "bg-zinc-300/70 text-zinc-500 line-through opacity-70",
+                closed: "bg-zinc-400/80 text-zinc-600 opacity-80",
+              }}
               locale={he}
               className="pointer-events-auto"
             />
@@ -138,22 +172,25 @@ function RescheduleModal({
                 <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-                {slots.filter((s) => s.available).map((s) => (
-                  <button
-                    key={s.time}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => handleTimeSelect(s.time)}
-                    className="rounded-lg border border-border bg-card py-2 text-sm font-medium hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
-                  >
-                    {s.time}
-                  </button>
-                ))}
-                {slots.filter((s) => s.available).length === 0 && (
-                  <p className="col-span-3 text-center text-sm text-muted-foreground py-4">אין שעות פנויות</p>
-                )}
-              </div>
+              <>
+                <p className="text-xs text-amber-700 mb-2">לאחר שינוי מועד התור יעבור לאישור מחדש של המנהל</p>
+                <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                  {slots.filter((s) => s.available).map((s) => (
+                    <button
+                      key={s.time}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => handleTimeSelect(s.time)}
+                      className="rounded-lg border border-border bg-card py-2 text-sm font-medium hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+                    >
+                      {s.time}
+                    </button>
+                  ))}
+                  {slots.filter((s) => s.available).length === 0 && (
+                    <p className="col-span-3 text-center text-sm text-muted-foreground py-4">אין שעות פנויות</p>
+                  )}
+                </div>
+              </>
             )}
           </div>
         )}

@@ -35,6 +35,7 @@ import {
   updateTherapist as dbUpdateTherapist,
   deleteTherapist as dbDeleteTherapist,
   rescheduleAppointment as dbReschedule,
+  rescheduleAppointmentByClient as dbRescheduleByClient,
   deleteAppointment as dbDeleteAppointment,
 } from "@/lib/db";
 
@@ -520,6 +521,18 @@ export async function rescheduleAppointment(id: string, date: string, time: stri
   await delay(300);
   const apt = mockAppointments.find((a) => a.id === id);
   if (apt) { apt.date = date; apt.time = time; }
+}
+
+// שינוי מועד ע"י לקוח מחזיר את התור למצב ממתין לאישור
+export async function rescheduleAppointmentByClient(id: string, date: string, time: string): Promise<void> {
+  if (useSupabase) return dbRescheduleByClient(id, date, time);
+  await delay(300);
+  const apt = mockAppointments.find((a) => a.id === id);
+  if (apt) {
+    apt.date = date;
+    apt.time = time;
+    apt.status = "pending";
+  }
 }
 
 export async function deleteAppointment(id: string): Promise<void> {

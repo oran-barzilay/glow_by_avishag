@@ -35,6 +35,62 @@ const STEPS = [
   { label: "פרטים", icon: User },
 ];
 
+const toIcsDateTime = (date: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+};
+
+const escapeIcsText = (text: string) =>
+  text.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+
+const downloadAppointmentIcs = (params: {
+  title: string;
+  description: string;
+  location: string;
+  start: Date;
+  end: Date;
+}) => {
+  const uid = `glow-${Date.now()}@booking`;
+  const now = toIcsDateTime(new Date());
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Glow Studio//Booking//HE",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${now}`,
+    `DTSTART:${toIcsDateTime(params.start)}`,
+    `DTEND:${toIcsDateTime(params.end)}`,
+    `SUMMARY:${escapeIcsText(params.title)}`,
+    `DESCRIPTION:${escapeIcsText(params.description)}`,
+    `LOCATION:${escapeIcsText(params.location)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "appointment.ics";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+const safeGetLocalStorageItem = (key: string, fallback: string) => {
+  try {
+    const ls = window.localStorage as Storage | undefined;
+    if (!ls || typeof ls.getItem !== "function") return fallback;
+    return ls.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const Booking = () => {
   // Read URL search params to get pre-selected service
   const [searchParams] = useSearchParams();
@@ -53,11 +109,12 @@ const Booking = () => {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [bookingComplete, setBookingComplete] = useState(false);
   const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
 
   // הגבלת מספר ימים קדימה לפי הגדרת האדמין
-  const maxAdvanceDays = parseInt(localStorage.getItem("maxAdvanceDays") ?? "30");
+  const maxAdvanceDays = parseInt(safeGetLocalStorageItem("maxAdvanceDays", "30")) || 30;
 
   // Normalize range so "today" stays selectable all day long
   const todayStart = new Date();
@@ -186,10 +243,31 @@ const Booking = () => {
   const selectedService = services.find((s) => s.id === selectedServiceId);
   const selectedTherapist = therapists.find((t) => t.id === selectedTherapistId);
 
-  // מטפלות שמסוגלות לטפל בשירות הנבחר
+  // Only therapists who can perform the selected service
   const eligibleTherapists = therapists.filter(
     (t) => !selectedServiceId || t.serviceIds.includes(selectedServiceId)
   );
+
+  const handleExportToCalendar = () => {
+    if (!selectedDate || !selectedTime) return;
+    const [hh, mm] = selectedTime.split(":").map(Number);
+    const start = new Date(selectedDate);
+    start.setHours(hh, mm, 0, 0);
+    const duration = selectedService?.duration ?? 60;
+    const end = new Date(start.getTime() + duration * 60_000);
+
+    const title = `${selectedService?.name ?? "תור ביומן"} - Glow Studio`;
+    const therapistPart = selectedTherapist ? `\nמטפלת: ${selectedTherapist.name}` : "";
+    const description = `תור שנקבע דרך האתר של Glow Studio${therapistPart}`;
+
+    downloadAppointmentIcs({
+      title,
+      description,
+      location: "Glow Studio",
+      start,
+      end,
+    });
+  };
 
   /**
    * Handles selecting a service — sets the service and advances to step 1
@@ -231,7 +309,15 @@ const Booking = () => {
    */
   const handleFormSubmit = async (data: { clientName: string; clientPhone: string; notes?: string }) => {
     if (!selectedServiceId || !selectedDate || !selectedTime) return;
+    if (!selectedTherapistId) {
+      const msg = "יש לבחור מטפלת לפני אישור ההזמנה";
+      setSubmitError(msg);
+      toast.error(msg);
+      return;
+    }
+    if (isSubmitting) return;
 
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
       await createBooking({
@@ -246,8 +332,11 @@ const Booking = () => {
 
       setBookingComplete(true);
       toast.success("הבקשה התקבלה — ממתינה לאישור מהסטודיו 💅");
-    } catch {
-      toast.error("משהו השתבש. נסו שוב.");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "משהו השתבש. נסו שוב.";
+      setSubmitError(errorMessage);
+      toast.error(`שגיאת שמירה: ${errorMessage}`);
+      console.error("Booking submit failed", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -279,7 +368,10 @@ const Booking = () => {
             {" · "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })} בשעה {selectedTime}
           </p>
           <p className="mb-8 text-sm text-muted-foreground">נעדכן אתכם לאחר אישור התור. תודה על הסבלנות!</p>
-          <Button variant="hero" onClick={() => navigate("/")}>חזרה לדף הבית</Button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button variant="outline" onClick={handleExportToCalendar}>הוסיפו ליומן האישי</Button>
+            <Button variant="hero" onClick={() => navigate("/")}>חזרה לדף הבית</Button>
+          </div>
         </motion.div>
       </div>
     );
@@ -492,6 +584,11 @@ const Booking = () => {
               </p>
               <div className="rounded-lg border border-border bg-card p-6 shadow-card">
                 <BookingForm onSubmit={handleFormSubmit} isSubmitting={isSubmitting} />
+                {submitError && (
+                  <p className="mt-3 text-sm text-destructive" role="alert">
+                    {submitError}
+                  </p>
+                )}
               </div>
             </motion.div>
           )}

@@ -99,6 +99,15 @@ export async function rescheduleAppointment(id: string, date: string, time: stri
   if (error) throw error;
 }
 
+// ── שינוי שעה/תאריך ע"י לקוח + החזרה למצב ממתין ───────────────────────
+export async function rescheduleAppointmentByClient(id: string, date: string, time: string): Promise<void> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({ date, time, status: "pending" })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ── בדיקה אם שעה תפוסה (לפי מטפלת אם הוגדרה) ───────────────────────────
 export async function isTimeSlotTaken(
   date: string,
