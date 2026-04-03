@@ -251,6 +251,26 @@ export async function setAdminPassword(password: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── ביטול תור ע"י לקוח (לתור ממתין) ───────────────────────────────────
+export async function cancelPendingAppointmentByClient(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({ status: "cancelled" })
+    .eq("id", id)
+    .eq("status", "pending");
+  if (error) throw error;
+}
+
+// ── בקשת ביטול ע"י לקוח (לתור מאושר) ───────────────────────────────────
+export async function requestCancellationByClient(id: string, notes: string): Promise<void> {
+  const { error } = await supabase
+    .from("appointments")
+    .update({ notes })
+    .eq("id", id)
+    .eq("status", "confirmed");
+  if (error) throw error;
+}
+
 // ── מיפוי שורת DB → טיפוס Appointment ───────────────────────────────────
 function mapRow(row: Record<string, unknown>): Appointment {
   return {

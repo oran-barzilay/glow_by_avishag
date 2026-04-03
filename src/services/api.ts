@@ -36,6 +36,8 @@ import {
   deleteTherapist as dbDeleteTherapist,
   rescheduleAppointment as dbReschedule,
   rescheduleAppointmentByClient as dbRescheduleByClient,
+  cancelPendingAppointmentByClient as dbCancelPendingByClient,
+  requestCancellationByClient as dbRequestCancellationByClient,
   deleteAppointment as dbDeleteAppointment,
 } from "@/lib/db";
 
@@ -44,6 +46,11 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const useSupabase = !!(
   import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
 );
+
+export const CLIENT_CANCEL_REQUEST_TAG = "[cancel-request]";
+
+export const hasClientCancelRequest = (notes?: string | null): boolean =>
+  !!notes && notes.includes(CLIENT_CANCEL_REQUEST_TAG);
 
 // ── Mock therapists ───────────────────────────────────────────────────────
 const mockTherapists: Therapist[] = [
@@ -516,6 +523,46 @@ export async function cancelAppointment(id: string): Promise<void> {
   if (apt) apt.status = "cancelled";
 }
 
+// ביטול ע"י לקוח:
+// - תור pending: מתבטל מיד
+// - תור confirmed: נשלחת בקשת ביטול לאישור מנהל
+export async function cancelAppointmentByClient(appointment: Appointment): Promise<Appointment> {
+  if (useSupabase) {
+    if (appointment.status === "pending") {
+      await dbCancelPendingByClient(appointment.id);
+      return { ...appointment, status: "cancelled" };
+    }
+
+    if (appointment.status === "confirmed") {
+      const nextNotes = hasClientCancelRequest(appointment.notes)
+        ? (appointment.notes ?? "")
+        : `${appointment.notes ?? ""} ${CLIENT_CANCEL_REQUEST_TAG}`.trim();
+      await dbRequestCancellationByClient(appointment.id, nextNotes);
+      return { ...appointment, notes: nextNotes };
+    }
+
+    return appointment;
+  }
+
+  await delay(250);
+  const apt = mockAppointments.find((a) => a.id === appointment.id);
+  if (!apt) return appointment;
+
+  if (apt.status === "pending") {
+    apt.status = "cancelled";
+    return { ...apt };
+  }
+
+  if (apt.status === "confirmed") {
+    if (!hasClientCancelRequest(apt.notes)) {
+      apt.notes = `${apt.notes ?? ""} ${CLIENT_CANCEL_REQUEST_TAG}`.trim();
+    }
+    return { ...apt };
+  }
+
+  return { ...apt };
+}
+
 export async function rescheduleAppointment(id: string, date: string, time: string): Promise<void> {
   if (useSupabase) return dbReschedule(id, date, time);
   await delay(300);
@@ -555,6 +602,9 @@ export async function updateLateMinutes(id: string, lateMinutes: number | null):
   if (apt) apt.lateMinutes = lateMinutes;
 }
 
+// ============================================================
+// CLIENTS
+// ============================================================
 export async function getClientProfiles(): Promise<ClientProfile[]> {
   if (useSupabase) return dbGetClientProfiles();
   const map: Record<string, ClientProfile> = {};
@@ -585,7 +635,6 @@ export async function setAdminPassword(password: string): Promise<void> {
 export async function updateService(service: Service): Promise<Service> {
   if (useSupabase) {
     const { supabase } = await import("@/lib/supabase");
-    // If this service is being set as anchor, clear all others first
     if (service.isAnchor) {
       await supabase.from("services").update({ is_anchor: false }).neq("id", service.id);
     }
@@ -604,7 +653,6 @@ export async function updateService(service: Service): Promise<Service> {
     return { ...service, breakMinutes: data.break_minutes ?? 0, isAnchor: data.is_anchor ?? false };
   }
   await delay(250);
-  // In mock mode, enforce single anchor
   if (service.isAnchor) {
     mockServices.forEach((s) => { if (s.id !== service.id) s.isAnchor = false; });
   }
@@ -614,13 +662,10 @@ export async function updateService(service: Service): Promise<Service> {
   return mockServices[index];
 }
 
-/** Set (or clear) the anchor service. Passing null removes the anchor entirely. */
 export async function setAnchorService(serviceId: string | null): Promise<void> {
   if (useSupabase) {
     const { supabase } = await import("@/lib/supabase");
-    // Clear all anchors
     await supabase.from("services").update({ is_anchor: false }).neq("id", "");
-    // Set the chosen one
     if (serviceId) {
       await supabase.from("services").update({ is_anchor: true }).eq("id", serviceId);
     }

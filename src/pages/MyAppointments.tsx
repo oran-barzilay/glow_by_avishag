@@ -5,19 +5,28 @@
  */
 
 import { useEffect, useState } from "react";
+import { format } from "date-fns";
+import { he } from "date-fns/locale";
+import { motion, AnimatePresence } from "framer-motion";
+import { CalendarDays, Clock, X } from "lucide-react";
+import { toast } from "sonner";
+
 import { getAppointmentsByPhone } from "@/lib/db";
-import { getAppointments, getAvailableSlots, rescheduleAppointmentByClient, getBlockedDates, getWeeklySchedule } from "@/services/api";
+import {
+  getAppointments,
+  getAvailableSlots,
+  rescheduleAppointmentByClient,
+  getBlockedDates,
+  getWeeklySchedule,
+  cancelAppointmentByClient,
+  hasClientCancelRequest,
+} from "@/services/api";
 import { Appointment, BlockedDate, DaySchedule } from "@/services/types";
+import { formatHebrewDate } from "@/lib/dateFormat";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { he } from "date-fns/locale";
-import { formatHebrewDate } from "@/lib/dateFormat";
-import { CalendarDays, Clock, X } from "lucide-react";
-import { toast } from "sonner";
 
 const PHONE_STORAGE_KEY = "userPhone";
 const useSupabase = !!(
@@ -26,27 +35,27 @@ const useSupabase = !!(
 
 const statusLabel = (status: Appointment["status"]) => {
   switch (status) {
-    case "pending":   return "ממתין לאישור";
+    case "pending": return "ממתין לאישור";
     case "confirmed": return "מאושר";
     case "cancelled": return "בוטל";
     case "completed": return "הושלם";
-    default:          return status;
+    default: return status;
   }
 };
 
 const statusClass = (status: Appointment["status"]) => {
   switch (status) {
-    case "pending":   return "bg-amber-500/15 text-amber-900";
+    case "pending": return "bg-amber-500/15 text-amber-900";
     case "confirmed": return "bg-primary/10 text-primary";
     case "cancelled": return "bg-destructive/10 text-destructive";
     case "completed": return "bg-muted text-muted-foreground";
-    default:          return "bg-muted text-muted-foreground";
+    default: return "bg-muted text-muted-foreground";
   }
 };
 
-const formatIsraeliDate = (isoDate: string) => formatHebrewDate(isoDate);
+const cleanClientVisibleNotes = (notes?: string | null): string =>
+  (notes ?? "").replace(/\[cancel-request\]/g, "").trim();
 
-// ── Reschedule modal ──────────────────────────────────────────────────────
 function RescheduleModal({
   appointment,
   onClose,
@@ -122,6 +131,7 @@ function RescheduleModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
         <p className="text-sm text-muted-foreground mb-4">
           {appointment.serviceName} · {appointment.therapistName ?? ""}
         </p>
@@ -140,20 +150,6 @@ function RescheduleModal({
                 const daySchedule = weeklySchedule.find((w) => w.dayOfWeek === d.getDay());
                 return !!daySchedule && !daySchedule.isWorkingDay;
               }}
-              modifiers={{
-                blocked: (d) => {
-                  const dateStr = format(d, "yyyy-MM-dd");
-                  return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
-                },
-                closed: (d) => {
-                  const daySchedule = weeklySchedule.find((w) => w.dayOfWeek === d.getDay());
-                  return !!daySchedule && !daySchedule.isWorkingDay;
-                },
-              }}
-              modifiersClassNames={{
-                blocked: "bg-zinc-300/70 text-zinc-500 line-through opacity-70",
-                closed: "bg-zinc-400/80 text-zinc-600 opacity-80",
-              }}
               locale={he}
               className="pointer-events-auto"
             />
@@ -167,7 +163,7 @@ function RescheduleModal({
               className="text-xs text-primary mb-3 flex items-center gap-1 hover:underline"
             >
               <CalendarDays className="h-3 w-3" />
-              {selectedDate && format(selectedDate, "EEEE, d MMM", { locale: he })} — שנה תאריך
+              {selectedDate && format(selectedDate, "EEEE, d MMM", { locale: he })} - שנה תאריך
             </button>
 
             {loadingSlots ? (
@@ -175,25 +171,22 @@ function RescheduleModal({
                 <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               </div>
             ) : (
-              <>
-                <p className="text-xs text-amber-700 mb-2">לאחר שינוי מועד התור יעבור לאישור מחדש של המנהל</p>
-                <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-                  {slots.filter((s) => s.available).map((s) => (
-                    <button
-                      key={s.time}
-                      type="button"
-                      disabled={saving}
-                      onClick={() => handleTimeSelect(s.time)}
-                      className="rounded-lg border border-border bg-card py-2 text-sm font-medium hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
-                    >
-                      {s.time}
-                    </button>
-                  ))}
-                  {slots.filter((s) => s.available).length === 0 && (
-                    <p className="col-span-3 text-center text-sm text-muted-foreground py-4">אין שעות פנויות</p>
-                  )}
-                </div>
-              </>
+              <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                {slots.filter((s) => s.available).map((s) => (
+                  <button
+                    key={s.time}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => handleTimeSelect(s.time)}
+                    className="rounded-lg border border-border bg-card py-2 text-sm font-medium hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+                  >
+                    {s.time}
+                  </button>
+                ))}
+                {slots.filter((s) => s.available).length === 0 && (
+                  <p className="col-span-3 text-center text-sm text-muted-foreground py-4">אין שעות פנויות</p>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -203,9 +196,7 @@ function RescheduleModal({
 }
 
 export default function MyAppointments() {
-  const [inputValue, setInputValue] = useState<string>(
-    () => localStorage.getItem(PHONE_STORAGE_KEY) ?? ""
-  );
+  const [inputValue, setInputValue] = useState<string>(() => localStorage.getItem(PHONE_STORAGE_KEY) ?? "");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -213,22 +204,16 @@ export default function MyAppointments() {
 
   useEffect(() => {
     const saved = localStorage.getItem(PHONE_STORAGE_KEY);
-    if (saved && saved.length >= 7) {
-      doFetch(saved);
-    }
+    if (saved && saved.length >= 7) doFetch(saved);
   }, []);
 
   const doFetch = async (phoneNumber: string) => {
     setLoading(true);
     setSearched(false);
     const cleaned = phoneNumber.replace(/\D/g, "");
-    let filtered: Appointment[];
-    if (useSupabase) {
-      filtered = await getAppointmentsByPhone(cleaned);
-    } else {
-      const all = await getAppointments();
-      filtered = all.filter((a) => a.clientPhone.replace(/\D/g, "") === cleaned);
-    }
+    const filtered = useSupabase
+      ? await getAppointmentsByPhone(cleaned)
+      : (await getAppointments()).filter((a) => a.clientPhone.replace(/\D/g, "") === cleaned);
     setAppointments(filtered);
     setLoading(false);
     setSearched(true);
@@ -237,14 +222,24 @@ export default function MyAppointments() {
   const handleSearch = () => {
     if (inputValue.length < 7) return;
     localStorage.setItem(PHONE_STORAGE_KEY, inputValue);
-    doFetch(inputValue);
+    void doFetch(inputValue);
   };
 
   const handleRescheduleSaved = (updated: Appointment) => {
     setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
   };
 
-  const upcoming  = appointments.filter((a) => a.status !== "cancelled");
+  const handleCancelByClient = async (apt: Appointment) => {
+    try {
+      const updated = await cancelAppointmentByClient(apt);
+      setAppointments((prev) => prev.map((a) => (a.id === apt.id ? updated : a)));
+      toast.success(updated.status === "cancelled" ? "התור בוטל בהצלחה" : "בקשת ביטול נשלחה לאישור מנהל");
+    } catch {
+      toast.error("שגיאה בתהליך ביטול התור");
+    }
+  };
+
+  const upcoming = appointments.filter((a) => a.status !== "cancelled");
   const cancelled = appointments.filter((a) => a.status === "cancelled");
 
   return (
@@ -255,7 +250,6 @@ export default function MyAppointments() {
           <p className="text-muted-foreground">הזן את מספר הטלפון שלך כדי לצפות בתורים</p>
         </div>
 
-        {/* Phone Input */}
         <div className="flex gap-2 mb-8">
           <Input
             type="tel"
@@ -271,83 +265,69 @@ export default function MyAppointments() {
           </Button>
         </div>
 
-        {loading && (
-          <div className="flex justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        )}
-
         {!loading && searched && appointments.length === 0 && (
           <p className="text-center text-muted-foreground py-12">לא נמצאו תורים למספר טלפון זה.</p>
         )}
 
-        {/* Upcoming appointments */}
         {!loading && upcoming.length > 0 && (
           <div className="space-y-3 mb-6">
             <h2 className="text-lg font-semibold">תורים קרובים</h2>
-            {upcoming.map((apt, i) => (
-              <motion.div
-                key={apt.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="rounded-lg border border-border bg-card p-4 shadow-card"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold">{apt.serviceName}</span>
-                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusClass(apt.status))}>
-                    {statusLabel(apt.status)}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {formatIsraeliDate(apt.date)} בשעה {apt.time}
-                  {apt.therapistName && ` · ${apt.therapistName}`}
-                </p>
-                {apt.notes && (
-                  <p className="mt-1 text-xs text-muted-foreground italic">הערה: {apt.notes}</p>
-                )}
-                {/* כפתור שינוי מועד — רק לתורים עתידיים שלא בוטלו */}
-                {(apt.status === "pending" || apt.status === "confirmed") && apt.date >= format(new Date(), "yyyy-MM-dd") && (
-                  <button
-                    type="button"
-                    onClick={() => setRescheduleApt(apt)}
-                    className="mt-3 flex items-center gap-1.5 text-xs text-primary hover:underline"
-                  >
-                    <Clock className="h-3.5 w-3.5" />
-                    שנה מועד תור
-                  </button>
-                )}
-              </motion.div>
-            ))}
+            {upcoming.map((apt) => {
+              const hasCancelRequest = apt.status === "confirmed" && hasClientCancelRequest(apt.notes);
+              const isFuture = apt.date >= format(new Date(), "yyyy-MM-dd");
+              return (
+                <motion.div key={apt.id} className="rounded-lg border border-border bg-card p-4 shadow-card">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold">{apt.serviceName}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusClass(apt.status))}>{statusLabel(apt.status)}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {formatHebrewDate(apt.date)} בשעה {apt.time}
+                    {apt.therapistName && ` · ${apt.therapistName}`}
+                  </p>
+                  {cleanClientVisibleNotes(apt.notes) && (
+                    <p className="mt-1 text-xs text-muted-foreground italic">הערה: {cleanClientVisibleNotes(apt.notes)}</p>
+                  )}
+
+                  {(apt.status === "pending" || apt.status === "confirmed") && isFuture && (
+                    <button type="button" onClick={() => setRescheduleApt(apt)} className="mt-3 flex items-center gap-1.5 text-xs text-primary hover:underline">
+                      <Clock className="h-3.5 w-3.5" /> שנה מועד תור
+                    </button>
+                  )}
+
+                  {(apt.status === "pending" || apt.status === "confirmed") && isFuture && (
+                    <button
+                      type="button"
+                      disabled={hasCancelRequest}
+                      onClick={() => handleCancelByClient(apt)}
+                      className={cn("mt-2 flex items-center gap-1.5 text-xs hover:underline", hasCancelRequest ? "text-muted-foreground cursor-not-allowed" : "text-destructive")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      {hasCancelRequest ? "בקשת ביטול נשלחה" : "בטל תור"}
+                    </button>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         )}
 
-        {/* Cancelled appointments */}
         {!loading && cancelled.length > 0 && (
           <div className="space-y-3">
             <h2 className="text-lg font-semibold text-muted-foreground">תורים מבוטלים</h2>
-            {cancelled.map((apt, i) => (
-              <motion.div
-                key={apt.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="rounded-lg border border-border bg-muted/50 p-4"
-              >
+            {cancelled.map((apt) => (
+              <motion.div key={apt.id} className="rounded-lg border border-border bg-muted/50 p-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-muted-foreground">{apt.serviceName}</span>
-                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusClass(apt.status))}>
-                    {statusLabel(apt.status)}
-                  </span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", statusClass(apt.status))}>{statusLabel(apt.status)}</span>
                 </div>
-                <p className="text-sm text-muted-foreground">{formatIsraeliDate(apt.date)} בשעה {apt.time}</p>
+                <p className="text-sm text-muted-foreground">{formatHebrewDate(apt.date)} בשעה {apt.time}</p>
               </motion.div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Reschedule modal */}
       <AnimatePresence>
         {rescheduleApt && (
           <RescheduleModal
