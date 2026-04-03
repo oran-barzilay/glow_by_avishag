@@ -48,6 +48,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { formatHebrewDate } from "@/lib/dateFormat";
 import {
   getAppointments,
   getWeeklySchedule,
@@ -613,7 +614,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                           </span>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {apt.date} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
+                          {formatHebrewDate(apt.date)} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
                           {apt.therapistName && ` · ${apt.therapistName}`}
                         </p>
                         {apt.notes && <p className="mt-1 text-xs text-muted-foreground italic">הערה: {apt.notes}</p>}
@@ -685,7 +686,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                                 <span className="rounded-full bg-destructive/10 text-destructive px-2 py-0.5 text-xs font-medium">בוטל</span>
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {apt.date} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
+                                {formatHebrewDate(apt.date)} בשעה {apt.time} · {apt.clientName} · {apt.clientPhone}
                                 {apt.therapistName && ` · ${apt.therapistName}`}
                               </p>
                             </div>
@@ -936,7 +937,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                     visibleBlockedDates.map((block) => (
                       <div key={block.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-card">
                         <div>
-                          <span className="font-medium">{block.date}</span>
+                          <span className="font-medium">{formatHebrewDate(block.date)}</span>
                           <span className="mx-2 text-muted-foreground">·</span>
                           <span className="text-sm text-muted-foreground">
                             {block.blockedHours ? `שעות: ${block.blockedHours.join(", ")}` : "יום שלם"}
@@ -1083,7 +1084,7 @@ const Admin = ({ onLogout }: AdminProps) => {
                               {client.avgLateMinutes != null && (
                                 <span className="flex items-center gap-1 text-amber-600"><Timer className="h-3 w-3" />איחור ממוצע: {Math.round(client.avgLateMinutes)} דק׳</span>
                               )}
-                              {client.lastAppointment && <span className="text-muted-foreground">תור אחרון: {client.lastAppointment}</span>}
+                              {client.lastAppointment && <span className="text-muted-foreground">תור אחרון: {formatHebrewDate(client.lastAppointment)}</span>}
                             </div>
                           </div>
                           <div className={cn("text-xs font-semibold text-center shrink-0", scoreColor)}>

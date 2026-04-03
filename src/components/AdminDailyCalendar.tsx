@@ -10,6 +10,7 @@ import { ChevronRight, ChevronLeft, User } from "lucide-react";
 import { Appointment, Therapist, Service, DaySchedule } from "@/services/types";
 import { rescheduleAppointment, getAvailableSlots } from "@/services/api";
 import { cn } from "@/lib/utils";
+import { formatHebrewDate } from "@/lib/dateFormat";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -124,7 +125,7 @@ function ReschedulePopover({
 
         <div className="space-y-1 mb-4 text-sm">
           <p className="font-medium">{apt.clientName} · {apt.serviceName}</p>
-          <p className="text-muted-foreground">כעת: {apt.date} ב-{apt.time}</p>
+          <p className="text-muted-foreground">כעת: {formatHebrewDate(apt.date)} ב-{apt.time}</p>
           {svc && <p className="text-xs text-muted-foreground">משך: {svc.duration} דק׳{svc.breakMinutes ? ` + ${svc.breakMinutes} הפסקה` : ""}</p>}
           {!svc && durationFromNotes && <p className="text-xs text-muted-foreground">משך: {durationFromNotes} דק׳</p>}
         </div>
@@ -376,7 +377,7 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
 
             {dayApts.length === 0 && (
               <div className="absolute inset-0 right-12 flex flex-col items-center justify-center gap-1 text-sm text-muted-foreground pointer-events-none">
-                <span>אין תורים ב-{dateStr}</span>
+                <span>אין תורים ב-{formatHebrewDate(dateStr)}</span>
                 {appointments.filter(a => a.date === dateStr).length > 0 && (
                   <span className="text-xs">({appointments.filter(a => a.date === dateStr).length} תורים ביום זה למטפלות אחרות)</span>
                 )}

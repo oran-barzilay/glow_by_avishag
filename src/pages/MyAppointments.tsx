@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { he } from "date-fns/locale";
+import { formatHebrewDate } from "@/lib/dateFormat";
 import { CalendarDays, Clock, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,6 +43,8 @@ const statusClass = (status: Appointment["status"]) => {
     default:          return "bg-muted text-muted-foreground";
   }
 };
+
+const formatIsraeliDate = (isoDate: string) => formatHebrewDate(isoDate);
 
 // ── Reschedule modal ──────────────────────────────────────────────────────
 function RescheduleModal({
@@ -297,7 +300,7 @@ export default function MyAppointments() {
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {apt.date} בשעה {apt.time}
+                  {formatIsraeliDate(apt.date)} בשעה {apt.time}
                   {apt.therapistName && ` · ${apt.therapistName}`}
                 </p>
                 {apt.notes && (
@@ -337,7 +340,7 @@ export default function MyAppointments() {
                     {statusLabel(apt.status)}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground">{apt.date} בשעה {apt.time}</p>
+                <p className="text-sm text-muted-foreground">{formatIsraeliDate(apt.date)} בשעה {apt.time}</p>
               </motion.div>
             ))}
           </div>
