@@ -70,6 +70,7 @@ import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
 import { AdminDailyCalendar } from "@/components/AdminDailyCalendar";
 import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile, Therapist } from "@/services/types";
+import { getHolidayDates, getErevChagDates, getHolidayNameMap } from "@/lib/israeliHolidays";
 import { toast } from "sonner";
 
 const appointmentStatusLabel = (status: string) => {
@@ -128,6 +129,23 @@ const Admin = ({ onLogout }: AdminProps) => {
     return saved ? parseInt(saved) : 30;
   });
 
+  // קפיצת זמן לפי שירות עוגן
+  const anchorService = services.find((s) => s.isAnchor);
+  const anchorStepMinutes = anchorService
+    ? Math.max(5, anchorService.duration + (anchorService.breakMinutes ?? 0))
+    : 5;
+  const anchorStepSeconds = anchorStepMinutes * 60;
+
+  const snapTimeToStep = (time: string, stepMinutes: number): string => {
+    const [h, m] = time.split(":").map(Number);
+    const total = h * 60 + m;
+    const snapped = Math.round(total / stepMinutes) * stepMinutes;
+    const clamped = Math.max(0, Math.min(23 * 60 + 59, snapped));
+    const hh = Math.floor(clamped / 60);
+    const mm = clamped % 60;
+    return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
+  };
+
   // Password change
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -141,6 +159,49 @@ const Admin = ({ onLogout }: AdminProps) => {
     setMaxAdvanceDays(value);
     localStorage.setItem("maxAdvanceDays", String(value));
     toast.success("ההגדרה נשמרה");
+  };
+
+  const handleBlockHolidays = async () => {
+    const holidayDates = getHolidayDates();
+    const nameMap = getHolidayNameMap();
+    const existing = new Set(blockedDates.map((b) => b.date));
+    const toAdd = holidayDates.filter((d) => !existing.has(d));
+    if (toAdd.length === 0) {
+      toast.info("כל ימי החג כבר חסומים");
+      return;
+    }
+    for (const d of toAdd) {
+      await addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "חג" });
+    }
+    setBlockedDates(await getBlockedDates());
+    toast.success(`נחסמו ${toAdd.length} ימי חג`);
+  };
+
+  const handleBlockErevChag = async () => {
+    const erevDates = getErevChagDates();
+    const nameMap = getHolidayNameMap();
+    const existing = new Set(blockedDates.map((b) => b.date));
+    const toAdd = erevDates.filter((d) => !existing.has(d));
+    if (toAdd.length === 0) {
+      toast.info("כל ערבי החג כבר חסומים");
+      return;
+    }
+    for (const d of toAdd) {
+      await addBlockedDate({ date: d, blockedHours: null, reason: nameMap[d] ?? "ערב חג" });
+    }
+    setBlockedDates(await getBlockedDates());
+    toast.success(`נחסמו ${toAdd.length} ערבי חג`);
+  };
+
+  // Keep the existing "הזז" buttons working without extra modal state.
+  const setRescheduleApt = async (apt: Appointment) => {
+    const dateInput = window.prompt("תאריך חדש (YYYY-MM-DD)", apt.date);
+    if (!dateInput) return;
+    const timeInput = window.prompt("שעה חדשה (HH:MM)", apt.time);
+    if (!timeInput) return;
+    await rescheduleAppointment(apt.id, dateInput, timeInput);
+    setAppointments((prev) => prev.map((a) => (a.id === apt.id ? { ...a, date: dateInput, time: timeInput } : a)));
+    toast.success("התור הוזז בהצלחה");
   };
 
   useEffect(() => {
@@ -174,7 +235,27 @@ const Admin = ({ onLogout }: AdminProps) => {
   const handleTimeChange = async (dayOfWeek: number, field: "startTime" | "endTime", value: string) => {
     const day = schedule.find((d) => d.dayOfWeek === dayOfWeek);
     if (!day) return;
-    const updated = { ...day, [field]: value };
+
+    const nextValue = snapTimeToStep(value, anchorStepMinutes);
+    const updated = { ...day, [field]: nextValue };
+
+    // מוודא שעת סיום אחרי שעת התחלה לפחות קפיצה אחת
+    if (updated.startTime >= updated.endTime) {
+      if (field === "startTime") {
+        const [h, m] = updated.startTime.split(":").map(Number);
+        const endMins = h * 60 + m + anchorStepMinutes;
+        const hh = Math.floor(Math.min(endMins, 23 * 60 + 59) / 60);
+        const mm = Math.min(endMins, 23 * 60 + 59) % 60;
+        updated.endTime = `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
+      } else {
+        const [h, m] = updated.endTime.split(":").map(Number);
+        const startMins = Math.max(0, h * 60 + m - anchorStepMinutes);
+        const hh = Math.floor(startMins / 60);
+        const mm = startMins % 60;
+        updated.startTime = `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
+      }
+    }
+
     await updateDaySchedule(updated);
     setSchedule((prev) => prev.map((d) => (d.dayOfWeek === dayOfWeek ? updated : d)));
   };
@@ -525,12 +606,14 @@ const Admin = ({ onLogout }: AdminProps) => {
                               <span className="text-xs font-medium text-primary">שעת התחלה</span>
                               <Input type="time" value={day.startTime}
                                 onChange={(e) => handleTimeChange(day.dayOfWeek, "startTime", e.target.value)}
+                                step={anchorStepSeconds}
                                 className="w-32 border-primary/40 focus:border-primary" dir="ltr" />
                             </div>
                             <div className="flex flex-col gap-1">
                               <span className="text-xs font-medium text-muted-foreground">שעת סיום</span>
                               <Input type="time" value={day.endTime}
                                 onChange={(e) => handleTimeChange(day.dayOfWeek, "endTime", e.target.value)}
+                                step={anchorStepSeconds}
                                 className="w-32" dir="ltr" />
                             </div>
                           </div>
@@ -548,6 +631,11 @@ const Admin = ({ onLogout }: AdminProps) => {
                       הזמנה מקסימלית קדימה
                     </div>
                     <p className="text-xs text-muted-foreground">לקוחות לא יוכלו לבחור תאריך מעבר למספר הימים שתגדירי</p>
+                    {anchorService && (
+                      <p className="text-xs text-muted-foreground">
+                        קפיצת שעות הפעילות מותאמת לשירות העוגן: {anchorStepMinutes} דקות.
+                      </p>
+                    )}
                     <div className="flex items-center gap-3">
                       <Input type="number" min={1} max={365} value={maxAdvanceDays}
                         onChange={(e) => setMaxAdvanceDays(Number(e.target.value))} className="w-28" dir="ltr" />
@@ -568,6 +656,26 @@ const Admin = ({ onLogout }: AdminProps) => {
               />
               {blockedOpen && (
                 <div className="space-y-3 pt-1 pb-2">
+
+                  {/* ── Quick holiday blocking ── */}
+                  <div className="rounded-lg border border-border bg-card p-4 shadow-card space-y-2">
+                    <div className="text-sm font-semibold flex items-center gap-2">
+                      <CalendarOff className="h-4 w-4 text-primary" />
+                      חסימה מהירה לפי לוח השנה העברי
+                    </div>
+                    <p className="text-xs text-muted-foreground">חוסם אוטומטית את כל ימי החג / ערבי החג לשנים הקרובות (2025–2028)</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleBlockHolidays}>
+                        <CalendarOff className="h-3.5 w-3.5" />
+                        חסום ימי חג
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleBlockErevChag}>
+                        <Clock className="h-3.5 w-3.5" />
+                        חסום ערבי חג
+                      </Button>
+                    </div>
+                  </div>
+
                   {/* Add blocked date form */}
                   <div className="rounded-lg border border-border bg-card p-5 shadow-card">
                     <h3 className="mb-4 text-base font-semibold">הוספת חסימה</h3>

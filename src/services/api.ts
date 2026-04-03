@@ -65,6 +65,7 @@ export async function getServices(): Promise<Service[]> {
       icon: r.icon ?? "Sparkles",
       color: r.color ?? "service-nails",
       breakMinutes: r.break_minutes ?? 0,
+      isAnchor: r.is_anchor ?? false,
     }));
   }
   await delay(300);
@@ -130,7 +131,6 @@ export async function getAvailableSlots(
   const service = allServices.find((s) => s.id === serviceId);
   const duration = service?.duration ?? 30;
   const breakMins = service?.breakMinutes ?? 0;
-  const quantum = Math.max(5, duration + breakMins);
   const totalBlock = duration + breakMins;
 
   // תורים קיימים של המטפלת בתאריך הזה
@@ -185,38 +185,92 @@ export async function getAvailableSlots(
   const workStart = startH * 60 + startM;
   const workEnd = endH * 60 + endM;
 
+  // ── Anchor service (שירות עוגן) ───────────────────────────────────────────
+  // NOTE: anchorService is only found if the `is_anchor` column exists in the
+  // Supabase `services` table. Run the SQL migration first (see README).
+  const anchorService = allServices.find((s) => s.isAnchor);
+  const anchorTotalBlock = anchorService
+    ? (anchorService.duration + (anchorService.breakMinutes ?? 0))
+    : null;
+
+  const SLOT_STEP = 5;
+
+  // Sort existing booked ranges ascending by start time.
   const bookedRanges = bookedSlots
     .map((b) => ({ start: toMins(b.time), end: toMins(b.time) + b.totalBlock }))
     .sort((a, b) => a.start - b.start);
 
-  // חלונות פנויים בתוך שעות העבודה
-  const freeWindows: Array<{ start: number; end: number }> = [];
+  // Step 1 — Free blocks (contiguous gaps inside the workday).
+  const freeBlocks: Array<{ start: number; end: number }> = [];
   let cursor = workStart;
   for (const r of bookedRanges) {
     if (r.start > cursor) {
-      freeWindows.push({ start: cursor, end: Math.min(r.start, workEnd) });
+      freeBlocks.push({ start: cursor, end: Math.min(r.start, workEnd) });
     }
     cursor = Math.max(cursor, r.end);
   }
-  if (cursor < workEnd) freeWindows.push({ start: cursor, end: workEnd });
+  if (cursor < workEnd) freeBlocks.push({ start: cursor, end: workEnd });
 
-  // מועמדים חכמים: בתחילת כל חלון ואז בקוונטות של אורך הטיפול+הפסקה
   const candidateStarts = new Set<number>();
-  for (const w of freeWindows) {
-    // אפשר להתחיל מיד בתחילת החלון
-    if (w.start + duration <= w.end) candidateStarts.add(w.start);
 
-    // ואז רק בקוונטות כדי לא ליצור "שברי זמן" מיותרים
-    for (let s = w.start + quantum; s + duration <= w.end; s += quantum) {
-      candidateStarts.add(s);
+  if (anchorTotalBlock) {
+    // ── ANCHOR GRID MODE ─────────────────────────────────────────────────────
+    //
+    // The step size for a given service is GCD(serviceTotalBlock, anchorTotalBlock).
+    //
+    // WHY GCD?
+    //   • Anchor = 70 min (60+10).  Service = 70 min → step = GCD(70,70) = 70.
+    //     Slots: 09:00, 10:10, 11:20 …  (every full anchor cell)
+    //
+    //   • Service = 35 min (30+5)  → step = GCD(35,70) = 35.
+    //     Slots: 09:00, 09:35, 10:10, 10:45 …  (every half anchor cell)
+    //     Two of these fit perfectly inside one anchor cell with no dead time.
+    //
+    //   • Service = 210 min (180+30) → step = GCD(210,70) = 70.
+    //     Slots: 09:00, 10:10 …  (only full-cell boundaries, since 3 cells = 210)
+    //
+    //   • Service = 25 min (shizuf, break=10 → totalBlock=35) → step = GCD(35,70) = 35.
+    //     Same as the 35-min case above.
+    //
+    // A slot is offered when the step-boundary falls inside a free block AND
+    // the service duration fits before the block ends.
+    //
+    // Dynamic update: because every service snaps to a multiple of GCD, any
+    // booking (anchor or non-anchor) leaves the remaining free space also a
+    // multiple of GCD — so the grid stays consistent for future bookings.
+
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    const step = gcd(totalBlock, anchorTotalBlock);
+
+    for (let t = workStart; t + duration <= workEnd; t += step) {
+      for (const block of freeBlocks) {
+        if (t >= block.start && t + duration <= block.end) {
+          candidateStarts.add(t);
+          break;
+        }
+      }
+    }
+
+  } else {
+    // ── FALLBACK: no anchor defined ───────────────────────────────────────────
+    // Offer every 5-minute candidate in each free block + block edges.
+    for (const block of freeBlocks) {
+      const blockSize = block.end - block.start;
+      if (blockSize < duration) continue;
+
+      candidateStarts.add(block.start);
+
+      const maxOffset = blockSize - duration;
+      for (let offset = SLOT_STEP; offset <= maxOffset; offset += SLOT_STEP) {
+        candidateStarts.add(block.start + offset);
+      }
+
+      const rightEdge = block.end - duration;
+      if (rightEdge > block.start) candidateStarts.add(rightEdge);
     }
   }
 
-  // בנוסף: סוף תור קיים הוא נקודת התחלה חשובה למילוי מיטבי
-  for (const r of bookedRanges) {
-    if (r.end >= workStart && r.end + duration <= workEnd) candidateStarts.add(r.end);
-  }
-
+  // Step 3 — Sort, filter, build TimeSlot objects.
   const sortedStarts = [...candidateStarts]
     .sort((a, b) => a - b)
     .filter((mins) => mins >= workStart && mins + duration <= workEnd);
@@ -437,6 +491,10 @@ export async function setAdminPassword(password: string): Promise<void> {
 export async function updateService(service: Service): Promise<Service> {
   if (useSupabase) {
     const { supabase } = await import("@/lib/supabase");
+    // If this service is being set as anchor, clear all others first
+    if (service.isAnchor) {
+      await supabase.from("services").update({ is_anchor: false }).neq("id", service.id);
+    }
     const { data, error } = await supabase.from("services").upsert({
       id: service.id,
       name: service.name,
@@ -446,15 +504,35 @@ export async function updateService(service: Service): Promise<Service> {
       icon: service.icon,
       color: service.color,
       break_minutes: service.breakMinutes,
+      is_anchor: service.isAnchor ?? false,
     }).select().single();
     if (error) throw error;
-    return { ...service, breakMinutes: data.break_minutes ?? 0 };
+    return { ...service, breakMinutes: data.break_minutes ?? 0, isAnchor: data.is_anchor ?? false };
   }
   await delay(250);
+  // In mock mode, enforce single anchor
+  if (service.isAnchor) {
+    mockServices.forEach((s) => { if (s.id !== service.id) s.isAnchor = false; });
+  }
   const index = mockServices.findIndex((s) => s.id === service.id);
   if (index === -1) throw new Error("השירות לא נמצא");
   mockServices[index] = { ...service };
   return mockServices[index];
+}
+
+/** Set (or clear) the anchor service. Passing null removes the anchor entirely. */
+export async function setAnchorService(serviceId: string | null): Promise<void> {
+  if (useSupabase) {
+    const { supabase } = await import("@/lib/supabase");
+    // Clear all anchors
+    await supabase.from("services").update({ is_anchor: false }).neq("id", "");
+    // Set the chosen one
+    if (serviceId) {
+      await supabase.from("services").update({ is_anchor: true }).eq("id", serviceId);
+    }
+    return;
+  }
+  mockServices.forEach((s) => { s.isAnchor = s.id === serviceId; });
 }
 
 export type CreateServiceInput = Omit<Service, "id">;

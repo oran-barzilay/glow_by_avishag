@@ -18,9 +18,9 @@ import { cn } from "@/lib/utils";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TimeSlotPicker } from "@/components/TimeSlotPicker";
 import { BookingForm } from "@/components/BookingForm";
-import { getServices, getAvailableSlots, createBooking, getTherapists } from "@/services/api";
-import { supabase } from "@/lib/supabase";
-import { Service, TimeSlot, Therapist } from "@/services/types";
+import { getServices, getAvailableSlots, createBooking, getTherapists, getBlockedDates } from "@/services/api";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { Service, TimeSlot, Therapist, BlockedDate } from "@/services/types";
 import { toast } from "sonner";
 
 /**
@@ -43,6 +43,7 @@ const Booking = () => {
   // ===== STATE MANAGEMENT =====
   const [services, setServices] = useState<Service[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
+  const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
   const [selectedTherapistId, setSelectedTherapistId] = useState<string | null>(null);
@@ -67,9 +68,10 @@ const Booking = () => {
 
   // Load services and therapists on mount
   useEffect(() => {
-    Promise.all([getServices(), getTherapists()]).then(([svcData, therapistData]) => {
+    Promise.all([getServices(), getTherapists(), getBlockedDates()]).then(([svcData, therapistData, blocked]) => {
       setServices(svcData);
       setTherapists(therapistData.filter((t) => t.isActive));
+      setBlockedDates(blocked);
       // If a service was passed via URL, pre-select it and go to step 1
       const preSelected = searchParams.get("service");
       if (preSelected && svcData.find((s) => s.id === preSelected)) {
@@ -100,6 +102,10 @@ const Booking = () => {
     const interval = setInterval(() => {
       setSlotsRefreshKey((k) => k + 1);
     }, 15_000);
+
+    if (!isSupabaseConfigured) {
+      return () => clearInterval(interval);
+    }
 
     // Realtime: כל שינוי בטבלת appointments ביום/מטפלת הנבחרים מרענן סלוטים
     const dateStr = format(selectedDate, "yyyy-MM-dd");
@@ -279,7 +285,7 @@ const Booking = () => {
               transition={{ duration: 0.3 }}
             >
               <h2 className="mb-4 text-xl font-semibold">בחרו שירות</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 items-stretch">
                 {services.map((service, index) => (
                   <ServiceCard
                     key={service.id}
@@ -345,11 +351,29 @@ const Booking = () => {
                   mode="single"
                   selected={selectedDate}
                   onSelect={handleDateSelect}
-                  disabled={(date) => date < todayStart || date > maxBookingDate}
+                  disabled={(date) => {
+                    if (date < todayStart || date > maxBookingDate) return true;
+                    const dateStr = format(date, "yyyy-MM-dd");
+                    return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
+                  }}
+                  modifiers={{
+                    blocked: (date) => {
+                      const dateStr = format(date, "yyyy-MM-dd");
+                      return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
+                    },
+                  }}
+                  modifiersClassNames={{
+                    blocked: "opacity-30 line-through bg-muted text-muted-foreground",
+                  }}
                   locale={he}
                   className="rounded-lg border border-border bg-card p-3 shadow-card pointer-events-auto"
                 />
               </div>
+              {blockedDates.some((b) => b.blockedHours === null) && (
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  ימים מעומעמים אינם זמינים להזמנה
+                </p>
+              )}
             </motion.div>
           )}
 

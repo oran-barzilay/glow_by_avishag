@@ -39,7 +39,7 @@ export function ServiceCard({ service, onBook, index }: ServiceCardProps) {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.15 }}
-      className="group relative overflow-hidden rounded-lg border border-border bg-card p-6 shadow-card transition-all duration-300 hover:shadow-elevated hover:-translate-y-1"
+      className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card p-6 shadow-card transition-all duration-300 hover:shadow-elevated hover:-translate-y-1 h-full"
     >
       {/* Decorative gradient circle behind the icon */}
       <div
@@ -53,8 +53,8 @@ export function ServiceCard({ service, onBook, index }: ServiceCardProps) {
         {service.name}
       </h3>
 
-      {/* Service description */}
-      <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+      {/* Service description — grows to fill space */}
+      <p className="mb-4 flex-1 text-sm leading-relaxed text-muted-foreground">
         {service.description}
       </p>
 
@@ -68,11 +68,11 @@ export function ServiceCard({ service, onBook, index }: ServiceCardProps) {
         </span>
       </div>
 
-      {/* Book button */}
+      {/* Book button — always at the bottom */}
       <Button
         onClick={() => onBook(service.id)}
         variant="hero"
-        className="w-full"
+        className="w-full mt-auto"
       >
         הזמינו תור
       </Button>

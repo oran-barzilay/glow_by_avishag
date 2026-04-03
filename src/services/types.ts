@@ -24,6 +24,8 @@ export interface Service {
   icon: string;        // Lucide icon name for display
   color: string;       // Tailwind color class for theming
   breakMinutes: number; // הפסקה אחרי הטיפול (דקות)
+  /** שירות עוגן — מגדיר את גריד השעות לכל שאר השירותים */
+  isAnchor?: boolean;
 }
 
 /** Represents a single time slot available for booking */

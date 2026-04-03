@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Anchor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { addService, CreateServiceInput, deleteService, updateService } from "@/services/api";
+import { addService, CreateServiceInput, deleteService, updateService, setAnchorService } from "@/services/api";
 import { Service } from "@/services/types";
 import { SERVICE_COLOR_OPTIONS, SERVICE_ICON_OPTIONS } from "@/lib/serviceDisplay";
 import { toast } from "sonner";
@@ -104,14 +104,37 @@ export function AdminServicesTab({ services, setServices }: AdminServicesTabProp
     setDeleteId(null);
   };
 
+  const handleSetAnchor = async (serviceId: string, makeAnchor: boolean) => {
+    try {
+      await setAnchorService(makeAnchor ? serviceId : null);
+      // Update local state: only the chosen service gets isAnchor=true
+      setServices((prev) =>
+        prev.map((s) => ({ ...s, isAnchor: makeAnchor ? s.id === serviceId : false }))
+      );
+      toast.success(
+        makeAnchor
+          ? "השירות הוגדר כשירות עוגן ✓"
+          : "שירות העוגן הוסר"
+      );
+    } catch {
+      toast.error("שגיאה בשמירת שירות העוגן");
+    }
+  };
+
   return (
     <>
       <div className="space-y-6">
         {services.map((service) => (
           <div
             key={service.id}
-            className="rounded-lg border border-border bg-card p-4 shadow-card sm:p-5"
+            className={`rounded-lg border bg-card p-4 shadow-card sm:p-5 ${service.isAnchor ? "border-amber-400 ring-1 ring-amber-300" : "border-border"}`}
           >
+            {service.isAnchor && (
+              <div className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5 w-fit">
+                <Anchor className="h-3.5 w-3.5" />
+                שירות עוגן — מגדיר את גריד השעות לכל שאר השירותים
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <Label htmlFor={`name-${service.id}`}>שם השירות</Label>
@@ -218,9 +241,19 @@ export function AdminServicesTab({ services, setServices }: AdminServicesTabProp
                 </select>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2 items-center">
               <Button type="button" variant="hero" onClick={() => handleSave(service)}>
                 שמור שינויים
+              </Button>
+              <Button
+                type="button"
+                variant={service.isAnchor ? "default" : "outline"}
+                className={`gap-1.5 text-sm ${service.isAnchor ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500" : "text-amber-600 border-amber-300 hover:text-amber-700"}`}
+                onClick={() => handleSetAnchor(service.id, !service.isAnchor)}
+                title="שירות עוגן — מגדיר את גריד השעות לכל שאר השירותים"
+              >
+                <Anchor className="h-4 w-4" />
+                {service.isAnchor ? "שירות עוגן ✓" : "הגדר כעוגן"}
               </Button>
               <Button
                 type="button"

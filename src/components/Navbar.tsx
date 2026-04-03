@@ -13,7 +13,6 @@ const links = [
   { to: "/", label: "בית" },
   { to: "/booking", label: "הזמנת תור" },
   { to: "/my-appointments", label: "התורים שלי" },
-  { to: "/admin", label: "ניהול" },
 ];
 
 export function Navbar() {
