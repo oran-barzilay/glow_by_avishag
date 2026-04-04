@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { Appointment, BookingFormData, ClientProfile, Therapist } from "@/services/types";
+import type { Appointment, BookingFormData, ClientProfile, Therapist, ManagedClient } from "@/services/types";
 
 // ── שליפת כל התורים (לממשק ניהול) ──────────────────────────────────────
 export async function getAllAppointments(): Promise<Appointment[]> {
@@ -248,6 +248,50 @@ export async function getAdminPassword(): Promise<string | null> {
 // ── שמירת סיסמת ניהול ────────────────────────────────────────────────────
 export async function setAdminPassword(password: string): Promise<void> {
   const { error } = await supabase.from("settings").upsert({ key: "admin_password", value: password }, { onConflict: "key" });
+  if (error) throw error;
+}
+
+const MANAGED_CLIENTS_KEY = "managed_clients";
+
+export async function getManagedClients(): Promise<ManagedClient[]> {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", MANAGED_CLIENTS_KEY)
+    .maybeSingle();
+
+  if (error) throw error;
+  const raw = data?.value;
+  if (!raw) return [];
+
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        const phone = String(item?.phone ?? "").replace(/\D/g, "");
+        const name = String(item?.name ?? "").trim();
+        if (!phone || !name) return null;
+        return {
+          phone,
+          name,
+          isBlocked: Boolean(item?.isBlocked),
+          hiddenHours: Array.isArray(item?.hiddenHours)
+            ? item.hiddenHours.map((h: unknown) => String(h)).filter(Boolean)
+            : [],
+          updatedAt: String(item?.updatedAt ?? new Date().toISOString()),
+        } satisfies ManagedClient;
+      })
+      .filter(Boolean) as ManagedClient[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveManagedClients(clients: ManagedClient[]): Promise<void> {
+  const { error } = await supabase
+    .from("settings")
+    .upsert({ key: MANAGED_CLIENTS_KEY, value: JSON.stringify(clients) }, { onConflict: "key" });
   if (error) throw error;
 }
 

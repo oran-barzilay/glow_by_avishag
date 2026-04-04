@@ -69,11 +69,15 @@ import {
   deleteAppointment,
   createAdminExceptionAppointment,
   hasClientCancelRequest,
+  getManagedClients,
+  upsertManagedClient,
+  setManagedClientBlocked,
+  setManagedClientHiddenHours,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
 import { AdminDailyCalendar } from "@/components/AdminDailyCalendar";
-import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile, Therapist } from "@/services/types";
+import { Appointment, DaySchedule, BlockedDate, Service, ClientProfile, Therapist, ManagedClient } from "@/services/types";
 import { getHolidayDates, getErevChagDates, getHolidayNameMap } from "@/lib/israeliHolidays";
 import { toast } from "sonner";
 
@@ -106,6 +110,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [clientProfiles, setClientProfiles] = useState<ClientProfile[]>([]);
+  const [managedClients, setManagedClients] = useState<ManagedClient[]>([]);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -141,6 +146,11 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [appointmentsDateRange, setAppointmentsDateRange] = useState<{ from?: Date; to?: Date }>({});
    const [appointmentsPage, setAppointmentsPage] = useState(1);
   const [activeAdminTab, setActiveAdminTab] = useState("appointments");
+  const [clientsSearch, setClientsSearch] = useState("");
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [clientHiddenRangeDrafts, setClientHiddenRangeDrafts] = useState<Record<string, { from: string; to: string }>>({});
+  const [clientHiddenSelections, setClientHiddenSelections] = useState<Record<string, string[]>>({});
 
   const [holidayToggleLoading, setHolidayToggleLoading] = useState(false);
 
@@ -435,16 +445,152 @@ const Admin = ({ onLogout }: AdminProps) => {
       getServices(),
       getClientProfiles(),
       getTherapists(),
-    ]).then(([apts, sched, blocks, svc, profiles, therapistList]) => {
+      getManagedClients(),
+    ]).then(([apts, sched, blocks, svc, profiles, therapistList, managed]) => {
       setAppointments(apts);
       setSchedule(sched);
       setBlockedDates(blocks);
       setServices([...svc]);
       setClientProfiles(profiles);
       setTherapists(therapistList);
+      setManagedClients(managed);
       setLoading(false);
     });
   }, []);
+
+  const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+
+  const handleAddManagedClient = async () => {
+    try {
+      const saved = await upsertManagedClient({ name: newClientName, phone: newClientPhone });
+      setManagedClients((prev) => {
+        const exists = prev.some((c) => c.phone === saved.phone);
+        return exists ? prev.map((c) => (c.phone === saved.phone ? saved : c)) : [...prev, saved];
+      });
+      setNewClientName("");
+      setNewClientPhone("");
+      toast.success("לקוח נשמר בהצלחה");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "שגיאה בשמירת לקוח");
+    }
+  };
+
+  const handleToggleManagedBlocked = async (phone: string, name: string, next: boolean) => {
+    try {
+      await setManagedClientBlocked(phone, next, name);
+      setManagedClients((prev) => prev.map((c) =>
+        normalizePhone(c.phone) === normalizePhone(phone)
+          ? { ...c, isBlocked: next, updatedAt: new Date().toISOString() }
+          : c
+      ));
+      toast.success(next ? "הלקוח נחסם" : "החסימה הוסרה");
+    } catch {
+      toast.error("שגיאה בעדכון חסימה");
+    }
+  };
+
+  const handleSaveClientHiddenHours = async (phone: string, name: string, hours: string[]) => {
+    try {
+      await setManagedClientHiddenHours(phone, hours, name);
+      setManagedClients((prev) => prev.map((c) =>
+        normalizePhone(c.phone) === normalizePhone(phone)
+          ? { ...c, hiddenHours: hours, updatedAt: new Date().toISOString() }
+          : c
+      ));
+      toast.success("השעות המוסתרות נשמרו");
+    } catch {
+      toast.error("שגיאה בשמירת שעות מוסתרות");
+    }
+  };
+
+  const managedByPhone = new Map(managedClients.map((c) => [normalizePhone(c.phone), c]));
+  const mergedClients = clientProfiles.map((p) => {
+    const m = managedByPhone.get(normalizePhone(p.phone));
+    return {
+      ...p,
+      name: m?.name || p.name,
+      isBlocked: m?.isBlocked ?? false,
+      hiddenHours: m?.hiddenHours ?? [],
+    };
+  });
+  const managedOnlyClients = managedClients
+    .filter((m) => !mergedClients.some((c) => normalizePhone(c.phone) === normalizePhone(m.phone)))
+    .map((m) => ({
+      phone: m.phone,
+      name: m.name,
+      totalAppointments: 0,
+      completedAppointments: 0,
+      cancelledAppointments: 0,
+      avgLateMinutes: null as number | null,
+      score: 100,
+      lastAppointment: null as string | null,
+      isBlocked: m.isBlocked,
+      hiddenHours: m.hiddenHours,
+    }));
+  const searchableClients = [...mergedClients, ...managedOnlyClients].filter((c) => {
+    const q = clientsSearch.trim().toLowerCase();
+    if (!q) return true;
+    const byName = c.name.toLowerCase().includes(q);
+    const byPhone = normalizePhone(c.phone).includes(normalizePhone(q));
+    return byName || byPhone;
+  });
+
+  const clientHourOptions = (() => {
+    const parseMinutes = (time: string) => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const formatMinutes = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+    };
+
+    const working = schedule.filter((d) => d.isWorkingDay);
+    if (!working.length) return ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+
+    const min = Math.min(...working.map((d) => parseMinutes(d.startTime)));
+    const max = Math.max(...working.map((d) => parseMinutes(d.endTime)));
+    const arr: string[] = [];
+    for (let t = min; t <= max; t += anchorStepMinutes) arr.push(formatMinutes(t));
+    return arr;
+  })();
+
+  const getClientHiddenHours = (phone: string, fallback: string[]) =>
+    clientHiddenSelections[phone] ?? fallback;
+
+  const getClientRangeDraft = (phone: string) => {
+    const existing = clientHiddenRangeDrafts[phone];
+    if (existing) return existing;
+    const from = clientHourOptions[0] ?? "09:00";
+    const to = clientHourOptions[1] ?? from;
+    return { from, to };
+  };
+
+  const setClientRangeDraft = (phone: string, next: { from: string; to: string }) => {
+    setClientHiddenRangeDrafts((prev) => ({ ...prev, [phone]: next }));
+  };
+
+  const handleAddHiddenRangeForClient = (phone: string, fallbackHours: string[]) => {
+    const draft = getClientRangeDraft(phone);
+    const fromM = toMinutes(draft.from);
+    const toM = toMinutes(draft.to);
+    if (toM <= fromM) {
+      toast.error("שעת הסיום חייבת להיות אחרי שעת ההתחלה");
+      return;
+    }
+    const rangeSlots = clientHourOptions.filter((h) => {
+      const m = toMinutes(h);
+      return m >= fromM && m < toM;
+    });
+    const merged = [...new Set([...getClientHiddenHours(phone, fallbackHours), ...rangeSlots])].sort();
+    setClientHiddenSelections((prev) => ({ ...prev, [phone]: merged }));
+  };
+
+  const handleRemoveHiddenHourForClient = (phone: string, hour: string, fallbackHours: string[]) => {
+    const next = getClientHiddenHours(phone, fallbackHours).filter((h) => h !== hour);
+    setClientHiddenSelections((prev) => ({ ...prev, [phone]: next }));
+  };
 
   const handleToggleDay = async (dayOfWeek: number) => {
     const day = schedule.find((d) => d.dayOfWeek === dayOfWeek);
@@ -1377,15 +1523,31 @@ const Admin = ({ onLogout }: AdminProps) => {
               />
               {clientListOpen && (
                 <div className="space-y-3 pt-1 pb-2">
-                  {clientProfiles.length === 0 ? (
-                    <p className="py-8 text-center text-muted-foreground">אין נתוני לקוחות</p>
+                  <div className="rounded-lg border bg-card p-4 shadow-card space-y-3">
+                    <p className="text-sm font-semibold">הוספה/עדכון לקוח</p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="שם לקוח" />
+                      <Input value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} placeholder="טלפון" dir="ltr" />
+                      <Button variant="hero" onClick={handleAddManagedClient}>שמור לקוח</Button>
+                    </div>
+                    <Input
+                      value={clientsSearch}
+                      onChange={(e) => setClientsSearch(e.target.value)}
+                      placeholder="חיפוש לקוח לפי שם או טלפון"
+                    />
+                  </div>
+
+                  {searchableClients.length === 0 ? (
+                    <p className="py-8 text-center text-muted-foreground">אין לקוחות להצגה</p>
                   ) : (
-                    clientProfiles.map((client) => {
-                      const scoreColor = client.score >= 80 ? "text-green-600" : client.score >= 50 ? "text-amber-500" : "text-red-500";
-                      const scoreBg = client.score >= 80 ? "bg-green-50 border-green-200" : client.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
-                      return (
-                        <div key={client.phone} className={cn("rounded-lg border p-4 shadow-card flex flex-col sm:flex-row sm:items-center gap-4", scoreBg)}>
-                          <div className={cn("flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 shrink-0 mx-auto sm:mx-0", scoreBg)}>
+                    searchableClients.map((client) => {
+                       const scoreColor = client.score >= 80 ? "text-green-600" : client.score >= 50 ? "text-amber-500" : "text-red-500";
+                       const scoreBg = client.score >= 80 ? "bg-green-50 border-green-200" : client.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+                      const selectedHiddenHours = getClientHiddenHours(client.phone, client.hiddenHours ?? []);
+                      const draft = getClientRangeDraft(client.phone);
+                       return (
+                         <div key={client.phone} className={cn("rounded-lg border p-4 shadow-card flex flex-col sm:flex-row sm:items-center gap-4", scoreBg)}>
+                           <div className={cn("flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 shrink-0 mx-auto sm:mx-0", scoreBg)}>
                             <span className={cn("text-xl font-bold", scoreColor)}>{client.score}</span>
                             <Star className={cn("h-3 w-3", scoreColor)} />
                           </div>
@@ -1400,22 +1562,79 @@ const Admin = ({ onLogout }: AdminProps) => {
                               )}
                               {client.lastAppointment && <span className="text-muted-foreground">תור אחרון: {formatHebrewDate(client.lastAppointment)}</span>}
                             </div>
-                          </div>
-                          <div className={cn("text-xs font-semibold text-center shrink-0", scoreColor)}>
-                            {client.score >= 80 ? "לקוח מעולה ⭐" : client.score >= 50 ? "לקוח בינוני ⚠️" : "לקוח בעייתי 🚨"}
-                          </div>
-                        </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className="text-xs">חסום להזמנה</span>
+                              <Switch
+                                checked={Boolean(client.isBlocked)}
+                                onCheckedChange={(next) => handleToggleManagedBlocked(client.phone, client.name, next)}
+                              />
+                            </div>
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="w-full rounded-md border border-border bg-background p-2 space-y-2">
+                                <div className="text-[11px] text-muted-foreground">חסימת שעות להצגה ללקוח (משעה עד שעה)</div>
+                                <div className="flex flex-wrap items-center gap-2" dir="ltr">
+                                  <select
+                                    value={draft.from}
+                                    onChange={(e) => setClientRangeDraft(client.phone, { ...draft, from: e.target.value })}
+                                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                  >
+                                    {clientHourOptions.map((h) => <option key={`from-${client.phone}-${h}`} value={h}>{h}</option>)}
+                                  </select>
+                                  <span className="text-xs text-muted-foreground" dir="rtl">עד</span>
+                                  <select
+                                    value={draft.to}
+                                    onChange={(e) => setClientRangeDraft(client.phone, { ...draft, to: e.target.value })}
+                                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                                  >
+                                    {clientHourOptions.map((h) => <option key={`to-${client.phone}-${h}`} value={h}>{h}</option>)}
+                                  </select>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => handleAddHiddenRangeForClient(client.phone, client.hiddenHours ?? [])}
+                                  >
+                                    הוסף טווח
+                                  </Button>
+                                </div>
+
+                                <div className="flex flex-wrap gap-1" dir="ltr">
+                                  {selectedHiddenHours.length === 0 ? (
+                                    <span className="text-[11px] text-muted-foreground" dir="rtl">לא נבחרו שעות מוסתרות</span>
+                                  ) : (
+                                    selectedHiddenHours.map((h) => (
+                                      <button
+                                        key={`${client.phone}-${h}`}
+                                        type="button"
+                                        onClick={() => handleRemoveHiddenHourForClient(client.phone, h, client.hiddenHours ?? [])}
+                                        className="rounded border border-border bg-muted px-2 py-0.5 text-[11px] hover:bg-muted/70"
+                                        title="הסר שעה"
+                                      >
+                                        {h} ×
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="button"
+                                    variant="hero"
+                                    size="sm"
+                                    className="h-8 text-xs"
+                                    onClick={() => handleSaveClientHiddenHours(client.phone, client.name, selectedHiddenHours)}
+                                  >
+                                    שמור שעות מוסתרות
+                                  </Button>
+                                </div>
+                              </div>
+                             </div>
+                           </div>
+                         </div>
                       );
                     })
                   )}
-
-                  <div className="rounded-lg border bg-muted/30 p-4 text-xs text-muted-foreground space-y-1">
-                    <p className="font-medium text-foreground mb-2">איך מחושב הציון?</p>
-                    <p>• מתחיל מ-100 נקודות</p>
-                    <p>• כל ביטול מוריד עד 50 נק׳ (לפי אחוז ביטולים)</p>
-                    <p>• איחור ממוצע מוריד עד 30 נק׳ (5 נק׳ לכל 5 דקות)</p>
-                    <p className="mt-2">💡 לחצי "איחור" בטאב תורים לאחר אישור התור</p>
-                  </div>
                 </div>
               )}
             </div>

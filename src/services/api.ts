@@ -11,6 +11,7 @@ import {
   BookingFormData,
   ClientProfile,
   Therapist,
+  ManagedClient,
 } from "./types";
 
 import {
@@ -23,6 +24,8 @@ import {
 import {
   getAllAppointments as dbGetAll,
   getAppointmentsByPhone as dbGetByPhone,
+  getManagedClients as dbGetManagedClients,
+  saveManagedClients as dbSaveManagedClients,
   createAppointment as dbCreate,
   createAdminAppointment as dbCreateAdmin,
   updateAppointmentStatus,
@@ -53,9 +56,15 @@ export const CLIENT_CANCEL_REQUEST_TAG = "[cancel-request]";
 export const hasClientCancelRequest = (notes?: string | null): boolean =>
   !!notes && notes.includes(CLIENT_CANCEL_REQUEST_TAG);
 
+const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+
 export async function findClientByPhone(phone: string): Promise<{ name: string; phone: string } | null> {
-  const cleaned = phone.replace(/\D/g, "");
+  const cleaned = normalizePhone(phone);
   if (cleaned.length < 7) return null;
+
+  const managed = await getManagedClients();
+  const managedMatch = managed.find((c) => c.phone === cleaned);
+  if (managedMatch) return { name: managedMatch.name, phone: managedMatch.phone };
 
   if (useSupabase) {
     const rows = await dbGetByPhone(cleaned);
@@ -69,6 +78,77 @@ export async function findClientByPhone(phone: string): Promise<{ name: string; 
     .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   if (!rows.length) return null;
   return { name: rows[0].clientName, phone: rows[0].clientPhone };
+}
+
+export async function getManagedClients(): Promise<ManagedClient[]> {
+  if (useSupabase) return dbGetManagedClients();
+  try {
+    const raw = localStorage.getItem("managedClients");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveManagedClients(clients: ManagedClient[]): Promise<void> {
+  if (useSupabase) {
+    await dbSaveManagedClients(clients);
+    return;
+  }
+  localStorage.setItem("managedClients", JSON.stringify(clients));
+}
+
+export async function upsertManagedClient(input: { phone: string; name: string }): Promise<ManagedClient> {
+  const phone = normalizePhone(input.phone);
+  if (phone.length < 7) throw new Error("טלפון לא תקין");
+  const name = input.name.trim();
+  if (!name) throw new Error("שם לקוח חובה");
+
+  const current = await getManagedClients();
+  const existing = current.find((c) => c.phone === phone);
+  const next: ManagedClient = {
+    phone,
+    name,
+    isBlocked: existing?.isBlocked ?? false,
+    hiddenHours: existing?.hiddenHours ?? [],
+    updatedAt: new Date().toISOString(),
+  };
+  const merged = existing
+    ? current.map((c) => (c.phone === phone ? next : c))
+    : [...current, next];
+  await saveManagedClients(merged);
+  return next;
+}
+
+export async function setManagedClientBlocked(phone: string, isBlocked: boolean, defaultName?: string): Promise<void> {
+  const cleaned = normalizePhone(phone);
+  const current = await getManagedClients();
+  const found = current.find((c) => c.phone === cleaned);
+  if (!found) {
+    if (!defaultName?.trim()) throw new Error("לקוח לא נמצא");
+    await upsertManagedClient({ phone: cleaned, name: defaultName });
+    return setManagedClientBlocked(cleaned, isBlocked);
+  }
+  await saveManagedClients(current.map((c) =>
+    c.phone === cleaned ? { ...c, isBlocked, updatedAt: new Date().toISOString() } : c
+  ));
+}
+
+export async function setManagedClientHiddenHours(phone: string, hiddenHours: string[], defaultName?: string): Promise<void> {
+  const cleaned = normalizePhone(phone);
+  const current = await getManagedClients();
+  const found = current.find((c) => c.phone === cleaned);
+  if (!found) {
+    if (!defaultName?.trim()) throw new Error("לקוח לא נמצא");
+    await upsertManagedClient({ phone: cleaned, name: defaultName });
+    return setManagedClientHiddenHours(cleaned, hiddenHours);
+  }
+  const normalizedHours = [...new Set(hiddenHours)].sort();
+  await saveManagedClients(current.map((c) =>
+    c.phone === cleaned ? { ...c, hiddenHours: normalizedHours, updatedAt: new Date().toISOString() } : c
+  ));
 }
 
 // ── Mock therapists ───────────────────────────────────────────────────────
@@ -106,7 +186,8 @@ export async function getServices(): Promise<Service[]> {
 export async function getAvailableSlots(
   date: string,
   serviceId: string,
-  therapistId?: string | null
+  therapistId?: string | null,
+  clientPhone?: string | null,
 ): Promise<TimeSlot[]> {
   await delay(200);
 
@@ -325,6 +406,15 @@ export async function getAvailableSlots(
     return { time: timeStr, available: !isBlockedHour && !hasConflict };
   });
 
+  if (clientPhone) {
+    const managed = await getManagedClients();
+    const rule = managed.find((c) => c.phone === normalizePhone(clientPhone));
+    if (rule?.isBlocked) return [];
+    if (rule?.hiddenHours?.length) {
+      return slots.filter((s) => !rule.hiddenHours.includes(s.time));
+    }
+  }
+
   return slots;
 }
 
@@ -332,6 +422,12 @@ export async function getAvailableSlots(
 // CREATE BOOKING
 // ============================================================
 export async function createBooking(data: BookingFormData): Promise<Appointment> {
+  const managed = await getManagedClients();
+  const clientRule = managed.find((c) => c.phone === normalizePhone(data.clientPhone));
+  if (clientRule?.isBlocked) {
+    throw new Error("לא ניתן לקבוע תור עבור לקוח זה. פני למנהלת הסטודיו.");
+  }
+
   if (useSupabase) {
     const allServices = await getServices();
     const service = allServices.find((s) => s.id === data.serviceId);

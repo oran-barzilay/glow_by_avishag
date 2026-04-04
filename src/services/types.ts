@@ -63,6 +63,16 @@ export interface ClientProfile {
   lastAppointment: string | null;
 }
 
+/** לקוח מנוהל (נשמר דרך ממשק הניהול) */
+export interface ManagedClient {
+  phone: string;
+  name: string;
+  isBlocked: boolean;
+  /** שעות מוסתרות (HH:MM) שלא יוצגו ללקוח זה בהזמנה */
+  hiddenHours: string[];
+  updatedAt: string;
+}
+
 /** Represents the working hours for a specific day of the week */
 export interface DaySchedule {
   dayOfWeek: number;   // 0 = Sunday, 1 = Monday, ..., 6 = Saturday

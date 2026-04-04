@@ -201,12 +201,17 @@ const Booking = () => {
       setLoadingSlots(true);
       setSelectedTime(null);
       const dateStr = format(selectedDate, "yyyy-MM-dd");
-      getAvailableSlots(dateStr, selectedServiceId, selectedTherapistId).then((slots) => {
+      getAvailableSlots(
+        dateStr,
+        selectedServiceId,
+        selectedTherapistId,
+        identifiedPhone || phoneStepValue
+      ).then((slots) => {
         setTimeSlots(slots);
         setLoadingSlots(false);
       });
     }
-  }, [selectedDate, selectedServiceId, selectedTherapistId, slotsRefreshKey]);
+  }, [selectedDate, selectedServiceId, selectedTherapistId, slotsRefreshKey, identifiedPhone, phoneStepValue]);
 
   // רענון אוטומטי מהיר בזמן בחירת שעה + realtime אם Supabase פעיל
   useEffect(() => {
