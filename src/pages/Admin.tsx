@@ -145,10 +145,14 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [appointmentsSearch, setAppointmentsSearch] = useState("");
   const [appointmentsDateRange, setAppointmentsDateRange] = useState<{ from?: Date; to?: Date }>({});
    const [appointmentsPage, setAppointmentsPage] = useState(1);
-  const [activeAdminTab, setActiveAdminTab] = useState("appointments");
+   const [activeAdminTab, setActiveAdminTab] = useState("appointments");
+   const [activeMainCategory, setActiveMainCategory] = useState<"settings" | "clients" | "time-management">("time-management");
+   const [activeTimeSubTab, setActiveTimeSubTab] = useState<"appointments" | "calendar" | "schedule">("appointments");
+   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<"settings" | "services">("settings");
   const [clientsSearch, setClientsSearch] = useState("");
   const [newClientName, setNewClientName] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
+  const [addClientOpen, setAddClientOpen] = useState(false);
   const [clientHiddenRangeDrafts, setClientHiddenRangeDrafts] = useState<Record<string, { from: string; to: string }>>({});
   const [clientHiddenSelections, setClientHiddenSelections] = useState<Record<string, string[]>>({});
 
@@ -304,6 +308,29 @@ const Admin = ({ onLogout }: AdminProps) => {
     setAppointmentsSearch("");
     setAppointmentsDateRange({});
     setAppointmentsPage(1);
+  };
+
+  const switchMainCategory = (next: "settings" | "clients" | "time-management") => {
+    setActiveMainCategory(next);
+    if (next === "clients") {
+      setActiveAdminTab("clients");
+      return;
+    }
+    if (next === "settings") {
+      setActiveAdminTab(activeSettingsSubTab);
+      return;
+    }
+    setActiveAdminTab(activeTimeSubTab);
+  };
+
+  const switchTimeSubTab = (next: "appointments" | "calendar" | "schedule") => {
+    setActiveTimeSubTab(next);
+    setActiveAdminTab(next);
+  };
+
+  const switchSettingsSubTab = (next: "settings" | "services") => {
+    setActiveSettingsSubTab(next);
+    setActiveAdminTab(next);
   };
 
   useEffect(() => {
@@ -469,6 +496,7 @@ const Admin = ({ onLogout }: AdminProps) => {
       });
       setNewClientName("");
       setNewClientPhone("");
+      setAddClientOpen(false);
       toast.success("לקוח נשמר בהצלחה");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "שגיאה בשמירת לקוח");
@@ -868,50 +896,79 @@ const Admin = ({ onLogout }: AdminProps) => {
 
         <Tabs value={activeAdminTab} onValueChange={setActiveAdminTab} className="w-full" dir="rtl">
           <div className="mb-6 flex flex-col gap-3">
-            <TabsList className="h-auto grid w-full grid-cols-4 grid-rows-2 sm:grid-rows-1 sm:grid-cols-7 gap-1 p-1">
-              <TabsTrigger value="appointments" className="gap-1 text-xs py-2">
-                <CalendarDays className="h-4 w-4 shrink-0" />
-                <span>תורים</span>
-              </TabsTrigger>
-              <TabsTrigger value="calendar" className="gap-1 text-xs py-2">
-                <CalendarCheck className="h-4 w-4 shrink-0" />
-                <span>יומן</span>
-              </TabsTrigger>
-              <TabsTrigger value="services" className="gap-1 text-xs py-2">
-                <Sparkles className="h-4 w-4 shrink-0" />
-                <span>שירותים</span>
-              </TabsTrigger>
-              <TabsTrigger value="therapists" className="gap-1 text-xs py-2">
-                <UserCog className="h-4 w-4 shrink-0" />
-                <span>מטפלות</span>
-              </TabsTrigger>
-              <TabsTrigger value="schedule" className="gap-1 text-xs py-2">
-                <Clock className="h-4 w-4 shrink-0" />
-                <span>שעות</span>
-              </TabsTrigger>
-              <TabsTrigger value="clients" className="gap-1 text-xs py-2">
-                <Users className="h-4 w-4 shrink-0" />
-                <span>לקוחות</span>
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="gap-1 text-xs py-2">
-                <Settings className="h-4 w-4 shrink-0" />
-                <span>הגדרות</span>
-              </TabsTrigger>
-            </TabsList>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={activeMainCategory === "settings" ? "hero" : "outline"}
+                className="gap-2"
+                onClick={() => switchMainCategory("settings")}
+              >
+                <Settings className="h-4 w-4" />
+                הגדרות
+              </Button>
+              <Button
+                type="button"
+                variant={activeMainCategory === "clients" ? "hero" : "outline"}
+                className="gap-2"
+                onClick={() => switchMainCategory("clients")}
+              >
+                <Users className="h-4 w-4" />
+                ניהול לקוחות
+              </Button>
+              <Button
+                type="button"
+                variant={activeMainCategory === "time-management" ? "hero" : "outline"}
+                className="gap-2"
+                onClick={() => switchMainCategory("time-management")}
+              >
+                <Clock className="h-4 w-4" />
+                ניהול זמנים
+              </Button>
+            </div>
 
-            {activeAdminTab === "calendar" && (
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="outline" size="sm" className="gap-1" onClick={handleCalendarUpdateExport}>
-                  <Download className="h-4 w-4" />
-                  עדכון יומן אישי
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
-                  <Plus className="h-4 w-4" />
-                  הוספת תור חריג
-                </Button>
-              </div>
+            {activeMainCategory === "time-management" && (
+              <TabsList className="h-auto grid w-full grid-cols-3 gap-1 p-1">
+                <TabsTrigger value="appointments" className="gap-1 text-xs py-2" onClick={() => switchTimeSubTab("appointments")}>
+                  <CalendarDays className="h-4 w-4 shrink-0" />
+                  <span>תורים</span>
+                </TabsTrigger>
+                <TabsTrigger value="calendar" className="gap-1 text-xs py-2" onClick={() => switchTimeSubTab("calendar")}>
+                  <CalendarCheck className="h-4 w-4 shrink-0" />
+                  <span>יומן</span>
+                </TabsTrigger>
+                <TabsTrigger value="schedule" className="gap-1 text-xs py-2" onClick={() => switchTimeSubTab("schedule")}>
+                  <Clock className="h-4 w-4 shrink-0" />
+                  <span>שעות</span>
+                </TabsTrigger>
+              </TabsList>
             )}
-          </div>
+
+            {activeMainCategory === "settings" && (
+              <TabsList className="h-auto grid w-full grid-cols-2 gap-1 p-1">
+                <TabsTrigger value="settings" className="gap-1 text-xs py-2" onClick={() => switchSettingsSubTab("settings")}>
+                  <KeyRound className="h-4 w-4 shrink-0" />
+                  <span>שינוי סיסמה</span>
+                </TabsTrigger>
+                <TabsTrigger value="services" className="gap-1 text-xs py-2" onClick={() => switchSettingsSubTab("services")}>
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span>שירותים</span>
+                </TabsTrigger>
+              </TabsList>
+            )}
+
+            {activeMainCategory === "time-management" && activeAdminTab === "calendar" && (
+               <div className="flex flex-wrap justify-end gap-2">
+                 <Button variant="outline" size="sm" className="gap-1" onClick={handleCalendarUpdateExport}>
+                   <Download className="h-4 w-4" />
+                   עדכון יומן אישי
+                 </Button>
+                 <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
+                   <Plus className="h-4 w-4" />
+                   הוספת תור חריג
+                 </Button>
+               </div>
+             )}
+           </div>
 
           {/* ===== TAB: APPOINTMENTS ===== */}
           <TabsContent value="appointments">
@@ -1523,115 +1580,128 @@ const Admin = ({ onLogout }: AdminProps) => {
               />
               {clientListOpen && (
                 <div className="space-y-3 pt-1 pb-2">
-                  <div className="rounded-lg border bg-card p-4 shadow-card space-y-3">
-                    <p className="text-sm font-semibold">הוספה/עדכון לקוח</p>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="שם לקוח" />
-                      <Input value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} placeholder="טלפון" dir="ltr" />
-                      <Button variant="hero" onClick={handleAddManagedClient}>שמור לקוח</Button>
-                    </div>
+                  {/* שורת חיפוש + כפתור הוספה */}
+                  <div className="flex gap-2 items-center" dir="rtl">
                     <Input
                       value={clientsSearch}
                       onChange={(e) => setClientsSearch(e.target.value)}
-                      placeholder="חיפוש לקוח לפי שם או טלפון"
+                      placeholder="חיפוש לפי שם או טלפון"
+                      className="flex-1"
                     />
+                    <Button
+                      variant="hero"
+                      size="sm"
+                      className="shrink-0 gap-1"
+                      onClick={() => {
+                        setNewClientName("");
+                        setNewClientPhone("");
+                        setAddClientOpen(true);
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                      לקוח חדש
+                    </Button>
                   </div>
 
                   {searchableClients.length === 0 ? (
                     <p className="py-8 text-center text-muted-foreground">אין לקוחות להצגה</p>
                   ) : (
                     searchableClients.map((client) => {
-                       const scoreColor = client.score >= 80 ? "text-green-600" : client.score >= 50 ? "text-amber-500" : "text-red-500";
-                       const scoreBg = client.score >= 80 ? "bg-green-50 border-green-200" : client.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+                      const scoreColor = client.score >= 80 ? "text-green-600" : client.score >= 50 ? "text-amber-500" : "text-red-500";
+                      const scoreBg = client.score >= 80 ? "bg-green-50 border-green-200" : client.score >= 50 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
                       const selectedHiddenHours = getClientHiddenHours(client.phone, client.hiddenHours ?? []);
                       const draft = getClientRangeDraft(client.phone);
-                       return (
-                         <div key={client.phone} className={cn("rounded-lg border p-4 shadow-card flex flex-col sm:flex-row sm:items-center gap-4", scoreBg)}>
-                           <div className={cn("flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 shrink-0 mx-auto sm:mx-0", scoreBg)}>
-                            <span className={cn("text-xl font-bold", scoreColor)}>{client.score}</span>
-                            <Star className={cn("h-3 w-3", scoreColor)} />
+                      return (
+                        <div key={client.phone} className={cn("rounded-lg border p-4 shadow-card text-right", scoreBg)} dir="rtl">
+
+                          {/* שורת פרטים */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+                            <span className="font-semibold">{client.name}</span>
+                            <span className="text-muted-foreground text-xs" dir="ltr">{client.phone}</span>
+                            <span className={cn("font-bold", scoreColor)}>{client.score}</span>
+                            <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                              <CalendarDays className="h-3.5 w-3.5" />{client.totalAppointments} תורים
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-red-500 text-xs">
+                              <AlertTriangle className="h-3.5 w-3.5" />{client.cancelledAppointments} ביטולים
+                            </span>
+                            {client.lastAppointment && (
+                              <span className="text-muted-foreground text-xs">
+                                אחרון: {formatHebrewDate(client.lastAppointment)}
+                              </span>
+                            )}
                           </div>
-                          <div className="flex-1 space-y-1">
-                            <div className="font-semibold">{client.name}</div>
-                            <div className="text-sm text-muted-foreground">{client.phone}</div>
-                            <div className="flex flex-wrap gap-3 text-xs mt-1">
-                              <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{client.totalAppointments} תורים</span>
-                              <span className="flex items-center gap-1 text-red-500"><AlertTriangle className="h-3 w-3" />{client.cancelledAppointments} ביטולים</span>
-                              {client.avgLateMinutes != null && (
-                                <span className="flex items-center gap-1 text-amber-600"><Timer className="h-3 w-3" />איחור ממוצע: {Math.round(client.avgLateMinutes)} דק׳</span>
-                              )}
-                              {client.lastAppointment && <span className="text-muted-foreground">תור אחרון: {formatHebrewDate(client.lastAppointment)}</span>}
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <span className="text-xs">חסום להזמנה</span>
-                              <Switch
-                                checked={Boolean(client.isBlocked)}
-                                onCheckedChange={(next) => handleToggleManagedBlocked(client.phone, client.name, next)}
-                              />
-                            </div>
-                            <div className="mt-2 flex items-center gap-2">
-                              <div className="w-full rounded-md border border-border bg-background p-2 space-y-2">
-                                <div className="text-[11px] text-muted-foreground">חסימת שעות להצגה ללקוח (משעה עד שעה)</div>
-                                <div className="flex flex-wrap items-center gap-2" dir="ltr">
-                                  <select
-                                    value={draft.from}
-                                    onChange={(e) => setClientRangeDraft(client.phone, { ...draft, from: e.target.value })}
-                                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                                  >
-                                    {clientHourOptions.map((h) => <option key={`from-${client.phone}-${h}`} value={h}>{h}</option>)}
-                                  </select>
-                                  <span className="text-xs text-muted-foreground" dir="rtl">עד</span>
-                                  <select
-                                    value={draft.to}
-                                    onChange={(e) => setClientRangeDraft(client.phone, { ...draft, to: e.target.value })}
-                                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                                  >
-                                    {clientHourOptions.map((h) => <option key={`to-${client.phone}-${h}`} value={h}>{h}</option>)}
-                                  </select>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 text-xs"
-                                    onClick={() => handleAddHiddenRangeForClient(client.phone, client.hiddenHours ?? [])}
-                                  >
-                                    הוסף טווח
-                                  </Button>
-                                </div>
 
-                                <div className="flex flex-wrap gap-1" dir="ltr">
-                                  {selectedHiddenHours.length === 0 ? (
-                                    <span className="text-[11px] text-muted-foreground" dir="rtl">לא נבחרו שעות מוסתרות</span>
-                                  ) : (
-                                    selectedHiddenHours.map((h) => (
-                                      <button
-                                        key={`${client.phone}-${h}`}
-                                        type="button"
-                                        onClick={() => handleRemoveHiddenHourForClient(client.phone, h, client.hiddenHours ?? [])}
-                                        className="rounded border border-border bg-muted px-2 py-0.5 text-[11px] hover:bg-muted/70"
-                                        title="הסר שעה"
-                                      >
-                                        {h} ×
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
+                          {/* בלוק ניהול */}
+                          <div className="mt-3 rounded-md border border-border bg-background/70 px-3 py-2" dir="rtl">
+                            <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5">
 
-                                <div className="flex justify-end">
-                                  <Button
-                                    type="button"
-                                    variant="hero"
-                                    size="sm"
-                                    className="h-8 text-xs"
-                                    onClick={() => handleSaveClientHiddenHours(client.phone, client.name, selectedHiddenHours)}
-                                  >
-                                    שמור שעות מוסתרות
-                                  </Button>
-                                </div>
+                              {/* חסום להזמנה */}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-sm whitespace-nowrap">חסום</span>
+                                <Switch
+                                  checked={Boolean(client.isBlocked)}
+                                  onCheckedChange={(next) => handleToggleManagedBlocked(client.phone, client.name, next)}
+                                />
                               </div>
-                             </div>
-                           </div>
-                         </div>
+
+                              <span className="text-muted-foreground select-none shrink-0">|</span>
+
+                              {/* חסימת שעות */}
+                              <div className="flex items-center gap-1.5 shrink-0 flex-nowrap">
+                                <span className="text-sm text-muted-foreground whitespace-nowrap">שעות:</span>
+                                <span className="text-sm text-muted-foreground">מ</span>
+                                <select
+                                  value={draft.from}
+                                  onChange={(e) => setClientRangeDraft(client.phone, { ...draft, from: e.target.value })}
+                                  dir="ltr"
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-sm shrink-0"
+                                >
+                                  {clientHourOptions.map((h) => <option key={`from-${client.phone}-${h}`} value={h}>{h}</option>)}
+                                </select>
+                                <span className="text-sm text-muted-foreground">עד</span>
+                                <select
+                                  value={draft.to}
+                                  onChange={(e) => setClientRangeDraft(client.phone, { ...draft, to: e.target.value })}
+                                  dir="ltr"
+                                  className="h-8 rounded-md border border-input bg-background px-2 text-sm shrink-0"
+                                >
+                                  {clientHourOptions.map((h) => <option key={`to-${client.phone}-${h}`} value={h}>{h}</option>)}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddHiddenRangeForClient(client.phone, client.hiddenHours ?? [])}
+                                  className="h-8 rounded-md border border-border bg-muted px-3 text-sm hover:bg-muted/70 shrink-0"
+                                >
+                                  הוסף
+                                </button>
+                              </div>
+
+                              {/* תגיות שעות חסומות */}
+                              {selectedHiddenHours.map((h) => (
+                                <button
+                                  key={`${client.phone}-${h}`}
+                                  type="button"
+                                  onClick={() => handleRemoveHiddenHourForClient(client.phone, h, client.hiddenHours ?? [])}
+                                  className="rounded-md border border-border bg-muted px-2 py-1 text-xs hover:bg-destructive/10 hover:border-destructive hover:text-destructive shrink-0"
+                                  dir="ltr"
+                                >
+                                  {h} ×
+                                </button>
+                              ))}
+
+                              {/* שמור — תמיד מוצג כדי לאפשר שמירה גם של רשימה ריקה */}
+                              <button
+                                type="button"
+                                onClick={() => handleSaveClientHiddenHours(client.phone, client.name, selectedHiddenHours)}
+                                className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 shrink-0"
+                              >
+                                שמור
+                              </button>
+
+                            </div>
+                          </div>
+                        </div>
                       );
                     })
                   )}
@@ -1775,6 +1845,60 @@ const Admin = ({ onLogout }: AdminProps) => {
               <Button variant="outline" onClick={() => setRescheduleApt(null)}>ביטול</Button>
               <Button variant="hero" onClick={handleSaveReschedule} disabled={rescheduleSaving || !!rescheduleConflict}>
                 {rescheduleSaving ? "שומר..." : "שמור שינוי"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: הוספה/עדכון לקוח ===== */}
+      {addClientOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setAddClientOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-border bg-card p-5 shadow-xl"
+            dir="rtl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">הוספה / עדכון לקוח</h3>
+              <button onClick={() => setAddClientOpen(false)}>
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">שם לקוח</label>
+                <Input
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="שם מלא"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">טלפון</label>
+                <Input
+                  value={newClientPhone}
+                  onChange={(e) => setNewClientPhone(e.target.value)}
+                  placeholder="05X-XXXXXXX"
+                  dir="ltr"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAddClientOpen(false)}>ביטול</Button>
+              <Button
+                variant="hero"
+                onClick={handleAddManagedClient}
+                disabled={!newClientName.trim() || !newClientPhone.trim()}
+              >
+                שמור
               </Button>
             </div>
           </div>

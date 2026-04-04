@@ -687,10 +687,23 @@ export async function rescheduleAppointment(id: string, date: string, time: stri
 
 // שינוי מועד ע"י לקוח מחזיר את התור למצב ממתין לאישור
 export async function rescheduleAppointmentByClient(id: string, date: string, time: string): Promise<void> {
-  if (useSupabase) return dbRescheduleByClient(id, date, time);
+  if (useSupabase) {
+    const all = await dbGetAll();
+    const apt = all.find((a) => a.id === id);
+    if (!apt) throw new Error("התור לא נמצא");
+
+    const slots = await getAvailableSlots(date, apt.serviceId, apt.therapistId, apt.clientPhone);
+    const allowed = slots.some((s) => s.time === time && s.available);
+    if (!allowed) throw new Error("השעה שבחרת אינה זמינה");
+
+    return dbRescheduleByClient(id, date, time);
+  }
   await delay(300);
   const apt = mockAppointments.find((a) => a.id === id);
   if (apt) {
+    const slots = await getAvailableSlots(date, apt.serviceId, apt.therapistId, apt.clientPhone);
+    const allowed = slots.some((s) => s.time === time && s.available);
+    if (!allowed) throw new Error("השעה שבחרת אינה זמינה");
     apt.date = date;
     apt.time = time;
     apt.status = "pending";

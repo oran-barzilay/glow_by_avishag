@@ -93,7 +93,12 @@ function RescheduleModal({
     setSelectedDate(date);
     setLoadingSlots(true);
     const dateStr = format(date, "yyyy-MM-dd");
-    const available = await getAvailableSlots(dateStr, appointment.serviceId, appointment.therapistId);
+    const available = await getAvailableSlots(
+      dateStr,
+      appointment.serviceId,
+      appointment.therapistId,
+      appointment.clientPhone,
+    );
     setSlots(available);
     setLoadingSlots(false);
     setStep("time");
