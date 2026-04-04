@@ -46,9 +46,13 @@ export interface Appointment {
   notes: string;
   status: "pending" | "confirmed" | "cancelled" | "completed";
   createdAt: string;   // ISO datetime string
-  lateMinutes?: number | null;  // כמה דקות איחר הלקוח (null = לא הוזן)
+  lateMinutes?: number | null;
   therapistId?: string | null;
   therapistName?: string | null;
+  /** Timestamp שבו אישר הלקוח את התקנון */
+  termsAcceptedAt?: string | null;
+  /** כתובת IP שממנה אושר התקנון */
+  termsAcceptedIp?: string | null;
 }
 
 /** פרופיל לקוח עם סטטיסטיקות */
@@ -99,4 +103,8 @@ export interface BookingFormData {
   clientPhone: string;
   notes: string;
   therapistId?: string | null;
+  /** Timestamp שבו אישר הלקוח את התקנון (ISO string) */
+  termsAcceptedAt?: string | null;
+  /** כתובת IP שממנה אושר התקנון */
+  termsAcceptedIp?: string | null;
 }

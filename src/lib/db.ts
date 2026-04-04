@@ -41,6 +41,8 @@ export async function createAppointment(booking: BookingFormData & { serviceName
       status: "pending",
       therapist_id: booking.therapistId ?? null,
       therapist_name: (booking as BookingFormData & { therapistName?: string }).therapistName ?? null,
+      terms_accepted_at: booking.termsAcceptedAt ?? null,
+      terms_accepted_ip: booking.termsAcceptedIp ?? null,
     }])
     .select()
     .single();
@@ -349,5 +351,7 @@ function mapRow(row: Record<string, unknown>): Appointment {
     lateMinutes: row.late_minutes != null ? Number(row.late_minutes) : null,
     therapistId: (row.therapist_id as string) ?? null,
     therapistName: (row.therapist_name as string) ?? null,
+    termsAcceptedAt: (row.terms_accepted_at as string) ?? null,
+    termsAcceptedIp: (row.terms_accepted_ip as string) ?? null,
   };
 }

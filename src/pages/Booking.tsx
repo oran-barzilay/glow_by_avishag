@@ -345,7 +345,7 @@ const Booking = () => {
   /**
    * Handles the final form submission — creates the booking
    */
-  const handleFormSubmit = async (data: { clientName: string; clientPhone: string; notes?: string }) => {
+  const handleFormSubmit = async (data: { clientName: string; clientPhone: string; notes?: string; termsAcceptedAt?: string; termsAcceptedIp?: string }) => {
     if (!selectedServiceId || !selectedDate || !selectedTime) return;
     if (!selectedTherapistId) {
       const msg = "יש לבחור מטפלת לפני אישור ההזמנה";
@@ -366,6 +366,8 @@ const Booking = () => {
         clientPhone: data.clientPhone,
         notes: data.notes || "",
         therapistId: selectedTherapistId,
+        termsAcceptedAt: data.termsAcceptedAt ?? new Date().toISOString(),
+        termsAcceptedIp: data.termsAcceptedIp ?? "unknown",
       });
 
       setBookingComplete(true);

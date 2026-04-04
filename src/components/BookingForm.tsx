@@ -39,7 +39,7 @@ type BookingFormValues = z.infer<typeof bookingSchema>;
 
 interface BookingFormProps {
   /** Callback when the form is submitted with valid data */
-  onSubmit: (data: BookingFormValues) => void;
+  onSubmit: (data: BookingFormValues & { termsAcceptedAt: string; termsAcceptedIp: string }) => void;
   /** Whether the form is in a loading/submitting state */
   isSubmitting: boolean;
   /** Prefilled phone from phone-identification step */
@@ -71,9 +71,26 @@ export function BookingForm({
     }
   }, [initialPhone, initialName, form]);
 
+  const handleSubmit = async (data: BookingFormValues) => {
+    // לכוד timestamp מדויק ברגע האישור
+    const termsAcceptedAt = new Date().toISOString();
+
+    // ניסיון לקבל IP ציבורי דרך שירות חיצוני (fallback: "unknown")
+    let termsAcceptedIp = "unknown";
+    try {
+      const res = await fetch("https://api.ipify.org?format=json", { signal: AbortSignal.timeout(3000) });
+      const json = await res.json();
+      termsAcceptedIp = json.ip ?? "unknown";
+    } catch {
+      // ממשיכים עם "unknown" אם הבקשה נכשלת
+    }
+
+    onSubmit({ ...data, termsAcceptedAt, termsAcceptedIp });
+  };
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
         {/* Client Name Field */}
         <FormField
           control={form.control}
