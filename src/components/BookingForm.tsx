@@ -12,6 +12,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { TermsLink } from "@/components/TermsLink";
 import {
   Form,
   FormControl,
@@ -134,7 +135,7 @@ export function BookingForm({
 
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
           <p className="font-semibold">
-            באישור התור אני מסכים/ה לתקנון ולמדיניות הביטולים.
+            <TermsLink text="באישור התור אני מסכים/ה לתקנון ולמדיניות הביטולים." />
           </p>
           <p className="mt-1 font-bold">
             ביטול פחות מ-24 שעות לפני מועד התור גורר תשלום מלא.

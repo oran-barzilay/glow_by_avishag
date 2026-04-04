@@ -43,6 +43,8 @@ import {
   cancelPendingAppointmentByClient as dbCancelPendingByClient,
   requestCancellationByClient as dbRequestCancellationByClient,
   deleteAppointment as dbDeleteAppointment,
+  getTerms as dbGetTerms,
+  setTerms as dbSetTerms,
 } from "@/lib/db";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -834,4 +836,17 @@ export async function deleteService(id: string): Promise<void> {
   const index = mockServices.findIndex((s) => s.id === id);
   if (index === -1) throw new Error("השירות לא נמצא");
   mockServices.splice(index, 1);
+}
+
+// ============================================================
+// TERMS (תקנון)
+// ============================================================
+export async function getTerms(): Promise<string> {
+  if (useSupabase) return dbGetTerms();
+  return localStorage.getItem("terms") ?? "";
+}
+
+export async function setTerms(text: string): Promise<void> {
+  if (useSupabase) return dbSetTerms(text);
+  localStorage.setItem("terms", text);
 }

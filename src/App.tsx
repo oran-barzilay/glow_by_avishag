@@ -10,11 +10,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
 import Index from "./pages/Index";
 import Booking from "./pages/Booking";
 import { AdminRoute } from "@/components/AdminRoute";
 import NotFound from "./pages/NotFound";
 import MyAppointments from "./pages/MyAppointments";
+import Terms from "./pages/Terms";
 
 // Create a React Query client for managing server state (caching, refetching, etc.)
 const queryClient = new QueryClient();
@@ -25,16 +27,22 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        {/* Navbar is outside Routes so it appears on every page */}
-        <Navbar />
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/booking" element={<Booking />} />
-          <Route path="/admin" element={<AdminRoute />} />
-          <Route path="/my-appointments" element={<MyAppointments />} />
-          {/* Catch-all route for 404 pages */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <div className="flex min-h-screen flex-col">
+          {/* Navbar is outside Routes so it appears on every page */}
+          <Navbar />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/booking" element={<Booking />} />
+              <Route path="/admin" element={<AdminRoute />} />
+              <Route path="/my-appointments" element={<MyAppointments />} />
+              <Route path="/terms" element={<Terms />} />
+              {/* Catch-all route for 404 pages */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

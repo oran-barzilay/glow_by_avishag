@@ -73,6 +73,8 @@ import {
   upsertManagedClient,
   setManagedClientBlocked,
   setManagedClientHiddenHours,
+  getTerms,
+  setTerms,
 } from "@/services/api";
 import { AdminServicesTab } from "@/components/AdminServicesTab";
 import { AdminTherapistsTab } from "@/components/AdminTherapistsTab";
@@ -148,7 +150,7 @@ const Admin = ({ onLogout }: AdminProps) => {
    const [activeAdminTab, setActiveAdminTab] = useState("appointments");
    const [activeMainCategory, setActiveMainCategory] = useState<"settings" | "clients" | "time-management">("time-management");
    const [activeTimeSubTab, setActiveTimeSubTab] = useState<"appointments" | "calendar" | "schedule">("appointments");
-   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<"settings" | "services">("settings");
+   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<"settings" | "services" | "terms">("settings");
   const [clientsSearch, setClientsSearch] = useState("");
   const [newClientName, setNewClientName] = useState("");
   const [newClientPhone, setNewClientPhone] = useState("");
@@ -219,6 +221,10 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [showNewPw, setShowNewPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  // תקנון
+  const [termsText, setTermsText] = useState("");
+  const [savingTerms, setSavingTerms] = useState(false);
 
   // שינוי מועד תור (מנהל) - מודאל פנימי במקום window.prompt
   const [rescheduleApt, setRescheduleApt] = useState<Appointment | null>(null);
@@ -328,7 +334,7 @@ const Admin = ({ onLogout }: AdminProps) => {
     setActiveAdminTab(next);
   };
 
-  const switchSettingsSubTab = (next: "settings" | "services") => {
+  const switchSettingsSubTab = (next: "settings" | "services" | "terms") => {
     setActiveSettingsSubTab(next);
     setActiveAdminTab(next);
   };
@@ -473,7 +479,8 @@ const Admin = ({ onLogout }: AdminProps) => {
       getClientProfiles(),
       getTherapists(),
       getManagedClients(),
-    ]).then(([apts, sched, blocks, svc, profiles, therapistList, managed]) => {
+      getTerms(),
+    ]).then(([apts, sched, blocks, svc, profiles, therapistList, managed, terms]) => {
       setAppointments(apts);
       setSchedule(sched);
       setBlockedDates(blocks);
@@ -481,6 +488,7 @@ const Admin = ({ onLogout }: AdminProps) => {
       setClientProfiles(profiles);
       setTherapists(therapistList);
       setManagedClients(managed);
+      setTermsText(terms);
       setLoading(false);
     });
   }, []);
@@ -944,14 +952,18 @@ const Admin = ({ onLogout }: AdminProps) => {
             )}
 
             {activeMainCategory === "settings" && (
-              <TabsList className="h-auto grid w-full grid-cols-2 gap-1 p-1">
+              <TabsList className="h-auto grid w-full grid-cols-3 gap-1 p-1">
                 <TabsTrigger value="settings" className="gap-1 text-xs py-2" onClick={() => switchSettingsSubTab("settings")}>
                   <KeyRound className="h-4 w-4 shrink-0" />
-                  <span>שינוי סיסמה</span>
+                  <span>סיסמה</span>
                 </TabsTrigger>
                 <TabsTrigger value="services" className="gap-1 text-xs py-2" onClick={() => switchSettingsSubTab("services")}>
                   <Sparkles className="h-4 w-4 shrink-0" />
                   <span>שירותים</span>
+                </TabsTrigger>
+                <TabsTrigger value="terms" className="gap-1 text-xs py-2" onClick={() => switchSettingsSubTab("terms")}>
+                  <span className="text-base leading-none">📄</span>
+                  <span>תקנון</span>
                 </TabsTrigger>
               </TabsList>
             )}
@@ -1792,6 +1804,58 @@ const Admin = ({ onLogout }: AdminProps) => {
                   ) : (
                     <><KeyRound className="h-4 w-4" />עדכן סיסמה</>
                   )}
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ===== TAB: TERMS ===== */}
+          <TabsContent value="terms">
+            <div className="rounded-lg border border-border bg-card p-6 shadow-card space-y-4">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <span className="text-primary">📄</span>
+                תקנון ומדיניות
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                התקנון יוצג בתחתית כל עמוד באתר ובכל מקום שמוזכרת המילה "תקנון" יופיע קישור לעמוד התקנון.
+              </p>
+              <textarea
+                value={termsText}
+                onChange={(e) => setTermsText(e.target.value)}
+                dir="rtl"
+                rows={12}
+                placeholder="הזיני כאן את תקנון האתר, מדיניות ביטולים, תנאי שימוש וכו'..."
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+              />
+              <div className="flex items-center justify-between">
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary underline underline-offset-2 hover:text-primary/80"
+                >
+                  צפייה בתקנון ←
+                </a>
+                <Button
+                  variant="hero"
+                  size="sm"
+                  disabled={savingTerms}
+                  onClick={async () => {
+                    setSavingTerms(true);
+                    try {
+                      await setTerms(termsText);
+                      toast.success("התקנון נשמר בהצלחה");
+                    } catch {
+                      toast.error("שגיאה בשמירת התקנון");
+                    } finally {
+                      setSavingTerms(false);
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  {savingTerms ? (
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />שומר...</>
+                  ) : "שמור תקנון"}
                 </Button>
               </div>
             </div>

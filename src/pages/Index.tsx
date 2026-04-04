@@ -119,21 +119,6 @@ const Index = () => {
           ))}
         </div>
       </section>
-
-      {/* ===== FOOTER ===== */}
-      <footer className="border-t border-border py-8">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          © 2026 Glow Studio. כל הזכויות שמורות.
-        </div>
-        <div className="mt-3 text-center">
-          <Link
-            to="/admin"
-            className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            ניהול
-          </Link>
-        </div>
-      </footer>
     </div>
   );
 };

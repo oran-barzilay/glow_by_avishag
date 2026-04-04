@@ -251,6 +251,24 @@ export async function setAdminPassword(password: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── תקנון ────────────────────────────────────────────────────────────────
+export async function getTerms(): Promise<string> {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "terms")
+    .maybeSingle();
+  if (error) return "";
+  return data?.value ?? "";
+}
+
+export async function setTerms(text: string): Promise<void> {
+  const { error } = await supabase
+    .from("settings")
+    .upsert({ key: "terms", value: text }, { onConflict: "key" });
+  if (error) throw error;
+}
+
 const MANAGED_CLIENTS_KEY = "managed_clients";
 
 export async function getManagedClients(): Promise<ManagedClient[]> {
