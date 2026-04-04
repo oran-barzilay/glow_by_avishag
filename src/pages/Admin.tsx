@@ -210,16 +210,16 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [rescheduleSaving, setRescheduleSaving] = useState(false);
 
-  const openExceptionModal = () => {
+  const openExceptionModal = (defaults?: { date?: string; time?: string; therapistId?: string }) => {
     const defaultService = services[0];
     setExceptionForm((prev) => ({
       ...prev,
       serviceId: defaultService?.id ?? prev.serviceId,
       customServiceName: "",
       desiredDurationMinutes: String(defaultService?.duration ?? 30),
-      therapistId: therapists.find((t) => t.isActive)?.id ?? prev.therapistId,
-      date: format(new Date(), "yyyy-MM-dd"),
-      time: prev.time || "09:00",
+      therapistId: defaults?.therapistId ?? therapists.find((t) => t.isActive)?.id ?? prev.therapistId,
+      date: defaults?.date ?? format(new Date(), "yyyy-MM-dd"),
+      time: (defaults?.time ?? prev.time) || "09:00",
     }));
     setExceptionOpen(true);
   };
@@ -969,6 +969,9 @@ const Admin = ({ onLogout }: AdminProps) => {
                   onAppointmentUpdated={(updated) =>
                     setAppointments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
                   }
+                  onCreateExceptionFromCalendar={({ date, time, therapistId }) => {
+                    openExceptionModal({ date, time, therapistId });
+                  }}
                 />
               )}
             </div>

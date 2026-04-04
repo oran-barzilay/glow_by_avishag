@@ -4,9 +4,9 @@
  */
 
 import { useState, useRef, useEffect } from "react";
-import { format, addDays, subDays } from "date-fns";
+import { format, addDays, subDays, addWeeks, startOfWeek } from "date-fns";
 import { he } from "date-fns/locale";
-import { ChevronRight, ChevronLeft, User } from "lucide-react";
+import { ChevronRight, ChevronLeft, User, CalendarDays } from "lucide-react";
 import { Appointment, Therapist, Service, DaySchedule } from "@/services/types";
 import { rescheduleAppointment, getAvailableSlots } from "@/services/api";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,9 @@ import { formatHebrewDate } from "@/lib/dateFormat";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 
 interface Props {
   appointments: Appointment[];
@@ -21,6 +24,7 @@ interface Props {
   services: Service[];
   schedule: DaySchedule[];
   onAppointmentUpdated: (apt: Appointment) => void;
+  onCreateExceptionFromCalendar?: (payload: { date: string; time: string; therapistId?: string }) => void;
 }
 
 const HOUR_HEIGHT = 64; // px per hour
@@ -177,8 +181,9 @@ function ReschedulePopover({
 }
 
 // ── Main component ────────────────────────────────────────────────────────
-export function AdminDailyCalendar({ appointments, therapists, services, schedule, onAppointmentUpdated }: Props) {
+export function AdminDailyCalendar({ appointments, therapists, services, schedule, onAppointmentUpdated, onCreateExceptionFromCalendar }: Props) {
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<"day" | "week">("day");
   const [selectedTherapistId, setSelectedTherapistId] = useState<string>("");
   const [editApt, setEditApt] = useState<Appointment | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -194,6 +199,14 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
   }, [therapists, selectedTherapistId]);
 
   const dateStr = format(selectedDate, "yyyy-MM-dd");
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 0 });
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const weekStartStr = format(weekDays[0], "yyyy-MM-dd");
+  const weekEndStr = format(weekDays[6], "yyyy-MM-dd");
+
+  const shiftDate = (dir: -1 | 1) => {
+    setSelectedDate((d) => (viewMode === "day" ? addDays(d, dir) : addWeeks(d, dir)));
+  };
 
   // פילטר תורים:
   // - מציג תורים שה-therapistId שלהם תואם OR (מטפלת יחידה ואין therapistId בתור = תורים ישנים)
@@ -202,6 +215,15 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
     if (a.date !== dateStr) return false;
     if (a.therapistId === selectedTherapistId) return true;
     // תורים ישנים ללא therapist — הצג אותם תחת המטפלת הנבחרת
+    if (!a.therapistId && selectedTherapistId) return true;
+    return false;
+  });
+
+  // תורים לתצוגה שבועית באותה לוגיקת סינון של התצוגה היומית
+  const weekApts = appointments.filter((a) => {
+    if (a.status === "cancelled") return false;
+    if (a.date < weekStartStr || a.date > weekEndStr) return false;
+    if (a.therapistId === selectedTherapistId) return true;
     if (!a.therapistId && selectedTherapistId) return true;
     return false;
   });
@@ -248,34 +270,83 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
 
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
 
+  const handleDailyDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!onCreateExceptionFromCalendar || !columnRef.current) return;
+    const rect = columnRef.current.getBoundingClientRect();
+    const y = Math.max(0, Math.min(e.clientY - rect.top, TOTAL_HOURS * HOUR_HEIGHT - 1));
+    onCreateExceptionFromCalendar({
+      date: dateStr,
+      time: yToTime(y),
+      therapistId: selectedTherapistId || undefined,
+    });
+  };
+
+  const handleWeeklyDayDoubleClick = (day: Date) => {
+    if (!onCreateExceptionFromCalendar) return;
+    onCreateExceptionFromCalendar({
+      date: format(day, "yyyy-MM-dd"),
+      time: "09:00",
+      therapistId: selectedTherapistId || undefined,
+    });
+  };
+
   return (
     <div className="space-y-4" dir="rtl">
       {/* Header — תאריך ממורכז + בחירת מטפלת */}
-      <div className="flex flex-col items-center gap-3">
+      <div className="rounded-lg border border-border bg-card p-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => shiftDate(-1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
 
-        {/* ניווט תאריך — ממורכז */}
-        <div className="flex items-center gap-2">
-          <button onClick={() => setSelectedDate((d) => subDays(d, 1))} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <ChevronRight className="h-5 w-5" />
-          </button>
-          <div className="text-center min-w-[180px]">
-            <div className="font-bold text-lg">{format(selectedDate, "EEEE", { locale: he })}</div>
-            <div className="text-sm text-muted-foreground">{format(selectedDate, "d MMMM yyyy", { locale: he })}</div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" className="min-w-[220px] justify-center gap-2">
+                <CalendarDays className="h-4 w-4" />
+                {viewMode === "day"
+                  ? format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })
+                  : `${format(weekDays[0], "d MMM", { locale: he })} - ${format(weekDays[6], "d MMM yyyy", { locale: he })}`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2" align="center" dir="rtl">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(d) => d && setSelectedDate(d)}
+                locale={he}
+                className="pointer-events-auto"
+              />
+            </PopoverContent>
+          </Popover>
+
+          <Button type="button" variant="outline" size="sm" onClick={() => shiftDate(1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+
+          <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())}>היום</Button>
+
+          <div className="flex items-center rounded-md border border-border p-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === "day" ? "default" : "ghost"}
+              className="h-8"
+              onClick={() => setViewMode("day")}
+            >
+              יומי
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={viewMode === "week" ? "default" : "ghost"}
+              className="h-8"
+              onClick={() => setViewMode("week")}
+            >
+              שבועי
+            </Button>
           </div>
-          <button onClick={() => setSelectedDate((d) => addDays(d, 1))} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
         </div>
 
-        {/* כפתור היום — ממורכז */}
-        <button
-          onClick={() => setSelectedDate(new Date())}
-          className="text-xs text-primary border border-primary/30 rounded-full px-3 py-1 hover:bg-primary/5 transition-colors"
-        >
-          היום
-        </button>
-
-        {/* בחירת מטפלת */}
         <div className="w-full overflow-x-auto pb-1">
           <div className="flex gap-2 min-w-max mx-auto px-2 justify-center">
             {therapists.filter((t) => t.isActive).map((t) => (
@@ -298,14 +369,14 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
       </div>
 
       {/* יום חופש */}
-      {daySchedule && !daySchedule.isWorkingDay && (
+      {viewMode === "day" && daySchedule && !daySchedule.isWorkingDay && (
         <div className="rounded-lg border border-border bg-muted/50 p-6 text-center text-muted-foreground">
           יום חופש — {activeTherapist?.name} לא עובדת היום
         </div>
       )}
 
       {/* ציר זמן */}
-      {(!daySchedule || daySchedule.isWorkingDay) && (
+      {viewMode === "day" && (!daySchedule || daySchedule.isWorkingDay) && (
         <div className="rounded-lg border border-border bg-card overflow-hidden">
           <div
             className="relative select-none"
@@ -314,6 +385,7 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onDoubleClick={handleDailyDoubleClick}
           >
             {/* שעות — עמודת שמאל */}
             {hours.map((h) => (
@@ -363,6 +435,7 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
                   style={{ top: topY, height: Math.max(h, 28) }}
                   onMouseDown={(e) => handleDragStart(e, apt)}
                   onClick={(e) => { e.stopPropagation(); if (!isDragging) setEditApt(apt); }}
+                  onDoubleClick={(e) => e.stopPropagation()}
                 >
                   <div className="text-xs font-semibold truncate leading-tight">{apt.clientName}</div>
                   <div className="text-xs opacity-75 truncate">{apt.serviceName} · {apt.time}</div>
@@ -387,12 +460,64 @@ export function AdminDailyCalendar({ appointments, therapists, services, schedul
         </div>
       )}
 
-      {/* תיאור */}
-      <p className="text-xs text-muted-foreground">
-        💡 גרור תור לשינוי שעה · לחץ על תור לעריכה מדויקת
-      </p>
+      {viewMode === "week" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-7 gap-2">
+          {weekDays.map((day) => {
+            const dayKey = format(day, "yyyy-MM-dd");
+            const dayAptsInWeek = weekApts
+              .filter((a) => a.date === dayKey)
+              .sort((a, b) => a.time.localeCompare(b.time));
+            const dayCfg = schedule.find((d) => d.dayOfWeek === day.getDay());
+            const isClosed = dayCfg ? !dayCfg.isWorkingDay : false;
 
-      {/* Popover עריכה */}
+            return (
+              <div
+                key={dayKey}
+                className={cn(
+                  "rounded-lg border p-2 min-h-40",
+                  isClosed ? "bg-muted/40 border-border/60" : "bg-card border-border"
+                )}
+                onDoubleClick={() => handleWeeklyDayDoubleClick(day)}
+              >
+                <div className="mb-2 text-center">
+                  <p className="text-sm font-semibold">{format(day, "EEEE", { locale: he })}</p>
+                  <p className="text-xs text-muted-foreground">{format(day, "d MMM", { locale: he })}</p>
+                </div>
+
+                {isClosed ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">יום סגור</p>
+                ) : dayAptsInWeek.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">אין תורים</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {dayAptsInWeek.map((apt) => (
+                      <button
+                        key={apt.id}
+                        type="button"
+                        onClick={() => setEditApt(apt)}
+                        className={cn(
+                          "w-full rounded-md border-r-4 px-2 py-1 text-start",
+                          STATUS_COLORS[apt.status] ?? STATUS_COLORS.pending
+                        )}
+                      >
+                        <p className="text-xs font-semibold truncate">{apt.time} · {apt.clientName}</p>
+                        <p className="text-[11px] opacity-80 truncate">{apt.serviceName}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+       {/* תיאור */}
+       <p className="text-xs text-muted-foreground">
+         💡 גרור תור לשינוי שעה · לחץ על תור לעריכה מדויקת
+       </p>
+
+       {/* Popover עריכה */}
       <AnimatePresence>
         {editApt && (
           <ReschedulePopover
