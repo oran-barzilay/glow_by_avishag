@@ -9,16 +9,17 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, Check, CalendarDays, Clock, User, UserCheck } from "lucide-react";
+import { ArrowRight, Check, CalendarDays, Clock, User, UserCheck, Phone } from "lucide-react";
 import { format } from "date-fns";
 import { he } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ServiceCard } from "@/components/ServiceCard";
 import { TimeSlotPicker } from "@/components/TimeSlotPicker";
 import { BookingForm } from "@/components/BookingForm";
-import { getServices, getAvailableSlots, createBooking, getTherapists, getBlockedDates, getWeeklySchedule } from "@/services/api";
+import { getServices, getAvailableSlots, createBooking, getTherapists, getBlockedDates, getWeeklySchedule, findClientByPhone } from "@/services/api";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { Service, TimeSlot, Therapist, BlockedDate, DaySchedule } from "@/services/types";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ import { toast } from "sonner";
  * Each step has a label and an icon for the progress bar.
  */
 const STEPS = [
+  { label: "טלפון", icon: Phone },
   { label: "שירות", icon: Check },
   { label: "מטפלת", icon: UserCheck },
   { label: "תאריך", icon: CalendarDays },
@@ -112,6 +114,10 @@ const Booking = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [bookingComplete, setBookingComplete] = useState(false);
   const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
+  const [phoneStepValue, setPhoneStepValue] = useState("");
+  const [identifiedPhone, setIdentifiedPhone] = useState("");
+  const [identifiedClientName, setIdentifiedClientName] = useState("");
+  const [isLookingUpClient, setIsLookingUpClient] = useState(false);
 
   // הגבלת מספר ימים קדימה לפי הגדרת האדמין
   const maxAdvanceDays = parseInt(safeGetLocalStorageItem("maxAdvanceDays", "30")) || 30;
@@ -131,11 +137,11 @@ const Booking = () => {
       setTherapists(therapistData.filter((t) => t.isActive));
       setBlockedDates(blocked);
       setWeeklySchedule(weekly);
-      // If a service was passed via URL, pre-select it and go to step 1
+      // If a service was passed via URL, pre-select it (phone step remains first)
       const preSelected = searchParams.get("service");
       if (preSelected && svcData.find((s) => s.id === preSelected)) {
         setSelectedServiceId(preSelected);
-        setCurrentStep(1);
+        // setCurrentStep(1);
       }
     });
   }, [searchParams]);
@@ -185,7 +191,7 @@ const Booking = () => {
 
     setSelectedDate(undefined);
     setSelectedTime(null);
-    if (currentStep > 2) setCurrentStep(2);
+    if (currentStep > 3) setCurrentStep(3);
     toast.info("התאריך שנבחר נחסם ואינו זמין יותר");
   }, [blockedDates, selectedDate, currentStep]);
 
@@ -248,6 +254,33 @@ const Booking = () => {
     (t) => !selectedServiceId || t.serviceIds.includes(selectedServiceId)
   );
 
+  const handlePhoneStepContinue = async () => {
+    const cleaned = phoneStepValue.replace(/\D/g, "");
+    if (cleaned.length < 7) {
+      toast.error("נא להזין מספר טלפון תקין");
+      return;
+    }
+
+    setIsLookingUpClient(true);
+    try {
+      const existing = await findClientByPhone(cleaned);
+      setIdentifiedPhone(cleaned);
+      if (existing?.name) {
+        setIdentifiedClientName(existing.name);
+        toast.success(`ברוכה הבאה ${existing.name}`);
+      } else {
+        setIdentifiedClientName("");
+      }
+      setCurrentStep(selectedServiceId ? 2 : 1);
+    } catch {
+      setIdentifiedPhone(cleaned);
+      setIdentifiedClientName("");
+      setCurrentStep(selectedServiceId ? 2 : 1);
+    } finally {
+      setIsLookingUpClient(false);
+    }
+  };
+
   const handleExportToCalendar = () => {
     if (!selectedDate || !selectedTime) return;
     const [hh, mm] = selectedTime.split(":").map(Number);
@@ -277,7 +310,7 @@ const Booking = () => {
     setSelectedTherapistId(null);
     setSelectedDate(undefined);
     setSelectedTime(null);
-    setCurrentStep(1);
+    setCurrentStep(2);
   };
 
   /**
@@ -285,7 +318,7 @@ const Booking = () => {
    */
   const handleSelectTherapist = (therapistId: string) => {
     setSelectedTherapistId(therapistId);
-    setCurrentStep(2);
+    setCurrentStep(3);
   };
 
   /**
@@ -293,7 +326,7 @@ const Booking = () => {
    */
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
-    if (date) setCurrentStep(3);
+    if (date) setCurrentStep(4);
   };
 
   /**
@@ -301,7 +334,7 @@ const Booking = () => {
    */
   const handleTimeSelect = (time: string) => {
     setSelectedTime(time);
-    setCurrentStep(4);
+    setCurrentStep(5);
   };
 
   /**
@@ -368,6 +401,10 @@ const Booking = () => {
             {" · "}{selectedDate && format(selectedDate, "EEEE, d MMMM yyyy", { locale: he })} בשעה {selectedTime}
           </p>
           <p className="mb-8 text-sm text-muted-foreground">נעדכן אתכם לאחר אישור התור. תודה על הסבלנות!</p>
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 text-start">
+            <p className="font-semibold">תזכורת למדיניות הביטולים</p>
+            <p className="mt-1 font-bold">ביטול פחות מ-24 שעות לפני מועד התור גורר תשלום מלא.</p>
+          </div>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Button variant="outline" onClick={handleExportToCalendar}>הוסיפו ליומן האישי</Button>
             <Button variant="hero" onClick={() => navigate("/")}>חזרה לדף הבית</Button>
@@ -416,12 +453,45 @@ const Booking = () => {
           </Button>
         )}
 
+
         {/* ===== STEP CONTENT ===== */}
         <AnimatePresence mode="wait">
-          {/* STEP 0: Select a service */}
+          {/* STEP 0: Phone first */}
           {currentStep === 0 && (
             <motion.div
               key="step-0"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+              className="mx-auto max-w-md"
+            >
+              <h2 className="mb-1 text-xl font-semibold">נתחיל ממספר הטלפון שלכם</h2>
+              <p className="mb-4 text-sm text-muted-foreground">אם כבר קבעתם אצלנו תור, נמלא את השם שלכם אוטומטית.</p>
+              <div className="rounded-lg border border-border bg-card p-5 shadow-card space-y-3">
+                <Input
+                  value={phoneStepValue}
+                  onChange={(e) => setPhoneStepValue(e.target.value)}
+                  placeholder="לדוגמה: 050-1234567"
+                  dir="ltr"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handlePhoneStepContinue();
+                    }
+                  }}
+                />
+                <Button type="button" variant="hero" className="w-full" onClick={handlePhoneStepContinue} disabled={isLookingUpClient}>
+                  {isLookingUpClient ? "בודקים..." : "המשך לבחירת תור"}
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 1: Select a service */}
+          {currentStep === 1 && (
+            <motion.div
+              key="step-1"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -441,10 +511,10 @@ const Booking = () => {
             </motion.div>
           )}
 
-          {/* STEP 1: Select a therapist */}
-          {currentStep === 1 && (
+          {/* STEP 2: Select a therapist */}
+          {currentStep === 2 && (
             <motion.div
-              key="step-1"
+              key="step-2"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -476,10 +546,10 @@ const Booking = () => {
             </motion.div>
           )}
 
-          {/* STEP 2: Pick a date */}
-          {currentStep === 2 && (
+          {/* STEP 3: Pick a date */}
+          {currentStep === 3 && (
             <motion.div
-              key="step-2"
+              key="step-3"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -496,19 +566,13 @@ const Booking = () => {
                   onSelect={handleDateSelect}
                   disabled={(date) => {
                     if (date < todayStart || date > maxBookingDate) return true;
-
-                    // ימים לא פעילים לפי שעות העבודה השגרתיות
                     const day = weeklySchedule.find((d) => d.dayOfWeek === date.getDay());
                     if (day && !day.isWorkingDay) return true;
-
                     const dateStr = format(date, "yyyy-MM-dd");
                     return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
                   }}
                   modifiers={{
-                    blocked: (date) => {
-                      const dateStr = format(date, "yyyy-MM-dd");
-                      return blockedDates.some((b) => b.date === dateStr && b.blockedHours === null);
-                    },
+                    blocked: (date) => blockedDates.some((b) => b.date === format(date, "yyyy-MM-dd") && b.blockedHours === null),
                     closed: (date) => {
                       const day = weeklySchedule.find((d) => d.dayOfWeek === date.getDay());
                       return !!day && !day.isWorkingDay;
@@ -523,17 +587,15 @@ const Booking = () => {
                 />
               </div>
               {(blockedDates.some((b) => b.blockedHours === null) || weeklySchedule.some((d) => !d.isWorkingDay)) && (
-                <p className="mt-3 text-center text-xs text-muted-foreground">
-                  ימים מעומעמים אינם זמינים להזמנה
-                </p>
+                <p className="mt-3 text-center text-xs text-muted-foreground">ימים מעומעמים אינם זמינים להזמנה</p>
               )}
             </motion.div>
           )}
 
-          {/* STEP 3: Select a time slot */}
-          {currentStep === 3 && (
+          {/* STEP 4: Select a time slot */}
+          {currentStep === 4 && (
             <motion.div
-              key="step-3"
+              key="step-4"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -566,10 +628,10 @@ const Booking = () => {
             </motion.div>
           )}
 
-          {/* STEP 4: Contact form */}
-          {currentStep === 4 && (
+          {/* STEP 5: Contact form */}
+          {currentStep === 5 && (
             <motion.div
-              key="step-4"
+              key="step-5"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
@@ -583,12 +645,13 @@ const Booking = () => {
                 {" — "}{selectedDate && format(selectedDate, "EEE, d MMM", { locale: he })} בשעה {selectedTime}
               </p>
               <div className="rounded-lg border border-border bg-card p-6 shadow-card">
-                <BookingForm onSubmit={handleFormSubmit} isSubmitting={isSubmitting} />
-                {submitError && (
-                  <p className="mt-3 text-sm text-destructive" role="alert">
-                    {submitError}
-                  </p>
-                )}
+                <BookingForm
+                  onSubmit={handleFormSubmit}
+                  isSubmitting={isSubmitting}
+                  initialPhone={identifiedPhone || phoneStepValue}
+                  initialName={identifiedClientName}
+                />
+                {submitError && <p className="mt-3 text-sm text-destructive" role="alert">{submitError}</p>}
               </div>
             </motion.div>
           )}

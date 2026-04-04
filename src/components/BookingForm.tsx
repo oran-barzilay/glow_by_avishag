@@ -5,6 +5,7 @@
  * and zod for validation.
  */
 
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -40,18 +41,34 @@ interface BookingFormProps {
   onSubmit: (data: BookingFormValues) => void;
   /** Whether the form is in a loading/submitting state */
   isSubmitting: boolean;
+  /** Prefilled phone from phone-identification step */
+  initialPhone?: string;
+  /** Prefilled client name if recognized */
+  initialName?: string;
 }
 
-export function BookingForm({ onSubmit, isSubmitting }: BookingFormProps) {
+export function BookingForm({
+  onSubmit,
+  isSubmitting,
+  initialPhone,
+  initialName,
+}: BookingFormProps) {
   // Initialize react-hook-form with zod validation
   const form = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
     defaultValues: {
-      clientName: "",
-      clientPhone: "",
+      clientName: initialName ?? "",
+      clientPhone: initialPhone ?? "",
       notes: "",
     },
   });
+
+  useEffect(() => {
+    form.setValue("clientPhone", initialPhone ?? "", { shouldValidate: true });
+    if (initialName) {
+      form.setValue("clientName", initialName, { shouldValidate: true });
+    }
+  }, [initialPhone, initialName, form]);
 
   return (
     <Form {...form}>
@@ -114,6 +131,15 @@ export function BookingForm({ onSubmit, isSubmitting }: BookingFormProps) {
         >
           {isSubmitting ? "שולחים..." : "אישור הזמנה"}
         </Button>
+
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="font-semibold">
+            באישור התור אני מסכים/ה לתקנון ולמדיניות הביטולים.
+          </p>
+          <p className="mt-1 font-bold">
+            ביטול פחות מ-24 שעות לפני מועד התור גורר תשלום מלא.
+          </p>
+        </div>
       </form>
     </Form>
   );

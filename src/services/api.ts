@@ -22,6 +22,7 @@ import {
 
 import {
   getAllAppointments as dbGetAll,
+  getAppointmentsByPhone as dbGetByPhone,
   createAppointment as dbCreate,
   createAdminAppointment as dbCreateAdmin,
   updateAppointmentStatus,
@@ -51,6 +52,24 @@ export const CLIENT_CANCEL_REQUEST_TAG = "[cancel-request]";
 
 export const hasClientCancelRequest = (notes?: string | null): boolean =>
   !!notes && notes.includes(CLIENT_CANCEL_REQUEST_TAG);
+
+export async function findClientByPhone(phone: string): Promise<{ name: string; phone: string } | null> {
+  const cleaned = phone.replace(/\D/g, "");
+  if (cleaned.length < 7) return null;
+
+  if (useSupabase) {
+    const rows = await dbGetByPhone(cleaned);
+    if (!rows.length) return null;
+    const latest = [...rows].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))[0];
+    return { name: latest.clientName, phone: latest.clientPhone };
+  }
+
+  const rows = mockAppointments
+    .filter((a) => a.clientPhone.replace(/\D/g, "") === cleaned)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  if (!rows.length) return null;
+  return { name: rows[0].clientName, phone: rows[0].clientPhone };
+}
 
 // ── Mock therapists ───────────────────────────────────────────────────────
 const mockTherapists: Therapist[] = [
