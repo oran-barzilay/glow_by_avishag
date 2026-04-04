@@ -195,6 +195,11 @@ function RescheduleModal({
   );
 }
 
+const toLocalDateTime = (date: string, time: string): Date => {
+  const safeTime = time?.length === 5 ? `${time}:00` : (time || "00:00:00");
+  return new Date(`${date}T${safeTime}`);
+};
+
 export default function MyAppointments() {
   const [inputValue, setInputValue] = useState<string>(() => localStorage.getItem(PHONE_STORAGE_KEY) ?? "");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -239,8 +244,11 @@ export default function MyAppointments() {
     }
   };
 
-  const upcoming = appointments.filter((a) => a.status !== "cancelled");
-  const cancelled = appointments.filter((a) => a.status === "cancelled");
+  const now = new Date();
+  const isFutureAppointment = (apt: Appointment) => toLocalDateTime(apt.date, apt.time) > now;
+
+  const upcoming = appointments.filter((a) => a.status !== "cancelled" && isFutureAppointment(a));
+  const cancelled = appointments.filter((a) => a.status === "cancelled" && isFutureAppointment(a));
 
   return (
     <div dir="rtl" lang="he" className="min-h-[80vh] py-8">
@@ -269,12 +277,16 @@ export default function MyAppointments() {
           <p className="text-center text-muted-foreground py-12">לא נמצאו תורים למספר טלפון זה.</p>
         )}
 
+        {!loading && searched && appointments.length > 0 && upcoming.length === 0 && cancelled.length === 0 && (
+          <p className="text-center text-muted-foreground py-12">אין תורים עתידיים להצגה.</p>
+        )}
+
         {!loading && upcoming.length > 0 && (
           <div className="space-y-3 mb-6">
             <h2 className="text-lg font-semibold">תורים קרובים</h2>
             {upcoming.map((apt) => {
               const hasCancelRequest = apt.status === "confirmed" && hasClientCancelRequest(apt.notes);
-              const isFuture = apt.date >= format(new Date(), "yyyy-MM-dd");
+              const isFuture = isFutureAppointment(apt);
               return (
                 <motion.div key={apt.id} className="rounded-lg border border-border bg-card p-4 shadow-card">
                   <div className="flex items-center justify-between mb-1">

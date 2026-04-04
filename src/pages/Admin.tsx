@@ -131,6 +131,14 @@ const Admin = ({ onLogout }: AdminProps) => {
     const saved = localStorage.getItem("maxAdvanceDays");
     return saved ? parseInt(saved) : 30;
   });
+  const [adminMaxVisibleAppointments, setAdminMaxVisibleAppointments] = useState<number>(() => {
+    const saved = localStorage.getItem("adminMaxVisibleAppointments");
+    const parsed = saved ? Number(saved) : 5;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+  });
+  const [appointmentsSearch, setAppointmentsSearch] = useState("");
+  const [appointmentsDateRange, setAppointmentsDateRange] = useState<{ from?: Date; to?: Date }>({});
+   const [appointmentsPage, setAppointmentsPage] = useState(1);
 
   const [holidayToggleLoading, setHolidayToggleLoading] = useState(false);
 
@@ -273,6 +281,22 @@ const Admin = ({ onLogout }: AdminProps) => {
     localStorage.setItem("maxAdvanceDays", String(value));
     toast.success("ההגדרה נשמרה");
   };
+
+  const handleAdminMaxVisibleAppointmentsChange = (value: number) => {
+    const next = Math.max(1, Math.min(500, Math.floor(value || 1)));
+    setAdminMaxVisibleAppointments(next);
+    localStorage.setItem("adminMaxVisibleAppointments", String(next));
+  };
+
+  const handleClearAppointmentsFilters = () => {
+    setAppointmentsSearch("");
+    setAppointmentsDateRange({});
+    setAppointmentsPage(1);
+  };
+
+  useEffect(() => {
+    setAppointmentsPage(1);
+  }, [appointmentsSearch, appointmentsDateRange.from, appointmentsDateRange.to, adminMaxVisibleAppointments]);
 
   const handleBlockHolidays = async () => {
     if (holidayToggleLoading) return;
@@ -654,26 +678,113 @@ const Admin = ({ onLogout }: AdminProps) => {
           {/* ===== TAB: APPOINTMENTS ===== */}
           <TabsContent value="appointments">
             {(() => {
-              const today = format(new Date(), "yyyy-MM-dd");
+              const now = new Date();
+              const toLocalDateTime = (date: string, time: string): Date => {
+                const safeTime = time?.length === 5 ? `${time}:00` : (time || "00:00:00");
+                return new Date(`${date}T${safeTime}`);
+              };
+
               // רק תורים עתידיים, ממוינים לפי תאריך כניסה (createdAt)
               const future = appointments
-                .filter((a) => a.date >= today)
+                .filter((a) => toLocalDateTime(a.date, a.time) > now)
                 .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
-              const activeApts   = future.filter((a) => a.status !== "cancelled");
-              const cancelledApts = future.filter((a) => a.status === "cancelled");
+
+              const normalizedSearch = appointmentsSearch.trim().toLowerCase();
+              const searchDigits = normalizedSearch.replace(/\D/g, "");
+              const appointmentsDateFrom = appointmentsDateRange.from
+                ? format(appointmentsDateRange.from, "yyyy-MM-dd")
+                : "";
+              const appointmentsDateTo = appointmentsDateRange.to
+                ? format(appointmentsDateRange.to, "yyyy-MM-dd")
+                : "";
+
+              const filteredFuture = future.filter((a) => {
+                const nameMatch = a.clientName.toLowerCase().includes(normalizedSearch);
+                const phoneDigits = a.clientPhone.replace(/\D/g, "");
+                const phoneMatch = searchDigits.length > 0 && phoneDigits.includes(searchDigits);
+                const matchesSearch = normalizedSearch.length === 0 || nameMatch || phoneMatch;
+                const matchesFrom = !appointmentsDateFrom || a.date >= appointmentsDateFrom;
+                const matchesTo = !appointmentsDateTo || a.date <= appointmentsDateTo;
+                return matchesSearch && matchesFrom && matchesTo;
+              });
+
+              const totalPages = Math.max(1, Math.ceil(filteredFuture.length / adminMaxVisibleAppointments));
+              const currentPage = Math.min(appointmentsPage, totalPages);
+              const pageStart = (currentPage - 1) * adminMaxVisibleAppointments;
+              const visibleFuture = filteredFuture.slice(pageStart, pageStart + adminMaxVisibleAppointments);
+
+              const activeApts = visibleFuture.filter((a) => a.status !== "cancelled");
+              const cancelledApts = visibleFuture.filter((a) => a.status === "cancelled");
 
               return (
                 <div className="space-y-3">
-                  <div className="flex justify-end">
-                    <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
-                      <Plus className="h-4 w-4" />
-                      הוספת תור חריג
-                    </Button>
+                  <div className="rounded-lg border border-border bg-card p-3 shadow-card">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="grid flex-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                         <Input
+                           value={appointmentsSearch}
+                           onChange={(e) => setAppointmentsSearch(e.target.value)}
+                           placeholder="חיפוש לפי שם או טלפון"
+                         />
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-full min-w-0 justify-start font-normal overflow-hidden">
+                              <CalendarDays className="me-2 h-4 w-4" />
+                              {appointmentsDateRange.from ? (
+                                appointmentsDateRange.to ? (
+                                  <span className="min-w-0 truncate text-start">
+                                    {format(appointmentsDateRange.from, "dd/MM/yy")} - {format(appointmentsDateRange.to, "dd/MM/yy")}
+                                  </span>
+                                ) : (
+                                  <span className="min-w-0 truncate text-start">{format(appointmentsDateRange.from, "dd/MM/yy")}</span>
+                                )
+                              ) : (
+                                <span className="min-w-0 truncate text-start text-muted-foreground">סינון לפי טווח תאריכים</span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-3" align="start" dir="rtl">
+                            <div className="space-y-2">
+                              <p className="text-xs text-muted-foreground">בחרי מתאריך ועד תאריך</p>
+                              <Calendar
+                                mode="range"
+                                selected={{ from: appointmentsDateRange.from, to: appointmentsDateRange.to }}
+                                onSelect={(range) => setAppointmentsDateRange({ from: range?.from, to: range?.to })}
+                                locale={he}
+                                className="pointer-events-auto"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                       </div>
+
+                       <div className="flex items-center gap-2 shrink-0">
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           onClick={handleClearAppointmentsFilters}
+                           disabled={!appointmentsSearch && !appointmentsDateRange.from && !appointmentsDateRange.to}
+                         >
+                           ניקוי
+                         </Button>
+                         <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
+                          <Plus className="h-4 w-4" />
+                          הוספת תור חריג
+                        </Button>
+                       </div>
+                    </div>
+
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      נמצאו {filteredFuture.length} תורים עתידיים | עמוד {currentPage} מתוך {totalPages}
+                    </div>
                   </div>
 
                   {/* תורים פעילים */}
-                  {activeApts.length === 0 && (
-                    <p className="py-8 text-center text-muted-foreground">אין תורים עתידיים פעילים</p>
+                  {filteredFuture.length === 0 && (
+                    <p className="py-8 text-center text-muted-foreground">אין תורים עתידיים לפי הסינון שנבחר</p>
+                  )}
+                  {filteredFuture.length > 0 && activeApts.length === 0 && (
+                    <p className="py-4 text-center text-muted-foreground">אין תורים פעילים בעמוד זה</p>
                   )}
                   {activeApts.map((apt, i) => (
                     <motion.div
@@ -795,6 +906,39 @@ const Admin = ({ onLogout }: AdminProps) => {
                       </div>
                     </div>
                   )}
+
+                  {filteredFuture.length > 0 && (
+                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                      <div className="flex items-center gap-2" dir="ltr">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={adminMaxVisibleAppointments}
+                          onChange={(e) => handleAdminMaxVisibleAppointmentsChange(Number(e.target.value))}
+                          className="w-20 h-8"
+                        />
+                        <span className="text-xs text-muted-foreground" dir="rtl">תורים בעמוד</span>
+                      </div>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         disabled={currentPage <= 1}
+                         onClick={() => setAppointmentsPage((p) => Math.max(1, p - 1))}
+                       >
+                         הקודם
+                       </Button>
+                       <span className="text-sm text-muted-foreground">{currentPage} / {totalPages}</span>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         disabled={currentPage >= totalPages}
+                         onClick={() => setAppointmentsPage((p) => Math.min(totalPages, p + 1))}
+                       >
+                         הבא
+                       </Button>
+                     </div>
+                   )}
                 </div>
               );
             })()}
