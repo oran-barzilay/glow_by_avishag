@@ -36,6 +36,7 @@ import {
   KeyRound,
   UserCog,
   CalendarCheck,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,6 +140,7 @@ const Admin = ({ onLogout }: AdminProps) => {
   const [appointmentsSearch, setAppointmentsSearch] = useState("");
   const [appointmentsDateRange, setAppointmentsDateRange] = useState<{ from?: Date; to?: Date }>({});
    const [appointmentsPage, setAppointmentsPage] = useState(1);
+  const [activeAdminTab, setActiveAdminTab] = useState("appointments");
 
   const [holidayToggleLoading, setHolidayToggleLoading] = useState(false);
 
@@ -586,6 +588,81 @@ const Admin = ({ onLogout }: AdminProps) => {
     }
   };
 
+  const toIcsDateTime = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}00`;
+  };
+
+  const escapeIcsText = (text: string) =>
+    text.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+
+  const parseLocalDateTime = (date: string, time: string): Date => {
+    const safeTime = time?.length === 5 ? `${time}:00` : (time || "00:00:00");
+    return new Date(`${date}T${safeTime}`);
+  };
+
+  const handleCalendarUpdateExport = () => {
+    const now = new Date();
+    const future = appointments.filter((a) => parseLocalDateTime(a.date, a.time) > now);
+
+    if (future.length === 0) {
+      toast.error("אין תורים עתידיים לייצוא");
+      return;
+    }
+
+    const dtStamp = toIcsDateTime(new Date());
+    const vevents = future
+      .sort((a, b) => {
+        const aDt = parseLocalDateTime(a.date, a.time).getTime();
+        const bDt = parseLocalDateTime(b.date, b.time).getTime();
+        return aDt - bDt;
+      })
+      .map((apt) => {
+        const service = services.find((s) => s.id === apt.serviceId);
+        const durationMinutes = service?.duration ?? 30;
+        const start = parseLocalDateTime(apt.date, apt.time);
+        const end = new Date(start.getTime() + durationMinutes * 60_000);
+        const status = apt.status === "cancelled" ? "CANCELLED" : apt.status === "pending" ? "TENTATIVE" : "CONFIRMED";
+
+        const lines = [
+          "BEGIN:VEVENT",
+          `UID:glow-apt-${apt.id}@glowgetter`,
+          `DTSTAMP:${dtStamp}`,
+          `DTSTART:${toIcsDateTime(start)}`,
+          `DTEND:${toIcsDateTime(end)}`,
+          `SUMMARY:${escapeIcsText(`${apt.clientName} - ${apt.serviceName}`)}`,
+          `DESCRIPTION:${escapeIcsText(`טלפון: ${apt.clientPhone}${apt.notes ? `\\nהערה: ${apt.notes}` : ""}`)}`,
+          `STATUS:${status}`,
+          "END:VEVENT",
+        ];
+        return lines.join("\r\n");
+      })
+      .join("\r\n");
+
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Glow Studio//Admin Calendar Export//HE",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "X-WR-CALNAME:Glow Studio",
+      vevents,
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `glow-calendar-${format(new Date(), "yyyy-MM-dd")}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    toast.success("קובץ יומן נוצר בהצלחה");
+  };
+
   // ── DEBUG: dump entire state ─────────────────────────────────────────────
   // useEffect(() => {
   //   const dump = {
@@ -643,37 +720,52 @@ const Admin = ({ onLogout }: AdminProps) => {
           </Button>
         </div>
 
-        <Tabs defaultValue="appointments" className="w-full" dir="rtl">
-          <TabsList className="mb-6 h-auto grid w-full grid-cols-4 grid-rows-2 sm:grid-rows-1 sm:grid-cols-7 gap-1 p-1">
-            <TabsTrigger value="appointments" className="gap-1 text-xs py-2">
-              <CalendarDays className="h-4 w-4 shrink-0" />
-              <span>תורים</span>
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-1 text-xs py-2">
-              <CalendarCheck className="h-4 w-4 shrink-0" />
-              <span>יומן</span>
-            </TabsTrigger>
-            <TabsTrigger value="services" className="gap-1 text-xs py-2">
-              <Sparkles className="h-4 w-4 shrink-0" />
-              <span>שירותים</span>
-            </TabsTrigger>
-            <TabsTrigger value="therapists" className="gap-1 text-xs py-2">
-              <UserCog className="h-4 w-4 shrink-0" />
-              <span>מטפלות</span>
-            </TabsTrigger>
-            <TabsTrigger value="schedule" className="gap-1 text-xs py-2">
-              <Clock className="h-4 w-4 shrink-0" />
-              <span>שעות</span>
-            </TabsTrigger>
-            <TabsTrigger value="clients" className="gap-1 text-xs py-2">
-              <Users className="h-4 w-4 shrink-0" />
-              <span>לקוחות</span>
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-1 text-xs py-2">
-              <Settings className="h-4 w-4 shrink-0" />
-              <span>הגדרות</span>
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeAdminTab} onValueChange={setActiveAdminTab} className="w-full" dir="rtl">
+          <div className="mb-6 flex flex-col gap-3">
+            <TabsList className="h-auto grid w-full grid-cols-4 grid-rows-2 sm:grid-rows-1 sm:grid-cols-7 gap-1 p-1">
+              <TabsTrigger value="appointments" className="gap-1 text-xs py-2">
+                <CalendarDays className="h-4 w-4 shrink-0" />
+                <span>תורים</span>
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-1 text-xs py-2">
+                <CalendarCheck className="h-4 w-4 shrink-0" />
+                <span>יומן</span>
+              </TabsTrigger>
+              <TabsTrigger value="services" className="gap-1 text-xs py-2">
+                <Sparkles className="h-4 w-4 shrink-0" />
+                <span>שירותים</span>
+              </TabsTrigger>
+              <TabsTrigger value="therapists" className="gap-1 text-xs py-2">
+                <UserCog className="h-4 w-4 shrink-0" />
+                <span>מטפלות</span>
+              </TabsTrigger>
+              <TabsTrigger value="schedule" className="gap-1 text-xs py-2">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>שעות</span>
+              </TabsTrigger>
+              <TabsTrigger value="clients" className="gap-1 text-xs py-2">
+                <Users className="h-4 w-4 shrink-0" />
+                <span>לקוחות</span>
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="gap-1 text-xs py-2">
+                <Settings className="h-4 w-4 shrink-0" />
+                <span>הגדרות</span>
+              </TabsTrigger>
+            </TabsList>
+
+            {activeAdminTab === "calendar" && (
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" size="sm" className="gap-1" onClick={handleCalendarUpdateExport}>
+                  <Download className="h-4 w-4" />
+                  עדכון יומן אישי
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
+                  <Plus className="h-4 w-4" />
+                  הוספת תור חריג
+                </Button>
+              </div>
+            )}
+          </div>
 
           {/* ===== TAB: APPOINTMENTS ===== */}
           <TabsContent value="appointments">
@@ -952,15 +1044,9 @@ const Admin = ({ onLogout }: AdminProps) => {
           {/* ===== TAB: DAILY CALENDAR ===== */}
           <TabsContent value="calendar">
             <div className="space-y-3">
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" className="gap-1" onClick={openExceptionModal}>
-                  <Plus className="h-4 w-4" />
-                  הוספת תור חריג
-                </Button>
-              </div>
-              {therapists.length === 0 ? (
-                <p className="py-12 text-center text-muted-foreground">הוסיפי מטפלת כדי לצפות ביומן</p>
-              ) : (
+               {therapists.length === 0 ? (
+                 <p className="py-12 text-center text-muted-foreground">הוסיפי מטפלת כדי לצפות ביומן</p>
+               ) : (
                 <AdminDailyCalendar
                   appointments={appointments}
                   therapists={therapists}
