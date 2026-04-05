@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { CookieBanner } from "@/components/CookieConsent";
 import Index from "./pages/Index";
 import Booking from "./pages/Booking";
 import { AdminRoute } from "@/components/AdminRoute";
@@ -43,6 +44,7 @@ const App = () => (
           </main>
           <Footer />
         </div>
+        <CookieBanner />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

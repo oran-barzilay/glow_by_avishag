@@ -22,6 +22,7 @@ const Index = () => {
     getServices().then(setServices);
   }, []);
 
+
   // מעדכן את ה-Navbar אם הלוגו בעמוד נראה
   useEffect(() => {
     const el = logoRef.current;
